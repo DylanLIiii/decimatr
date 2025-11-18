@@ -6,10 +6,13 @@ configurable pipelines of taggers and filters. It supports both custom pipelines
 and predefined strategies for common use cases.
 """
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, List, Optional, Union
+
+import numpy as np
 
 from decimatr.exceptions import ConfigurationError
 from decimatr.filters.base import Filter
@@ -27,8 +30,8 @@ class ProcessingResult:
     Summary of a frame processing session.
     
     This class captures metrics and statistics from a processing session,
-    including frame counts, processing time, stage-level metrics, and any
-    errors encountered.
+    including frame counts, processing time, stage-level metrics, actor
+    health metrics, and any errors encountered.
     
     Attributes:
         session_id: Unique identifier for the processing session
@@ -38,7 +41,10 @@ class ProcessingResult:
         selected_frames: Number of frames that passed all filters
         processing_time: Total processing time in seconds
         stage_metrics: Dictionary of per-stage metrics (tagger/filter stats)
+        actor_metrics: Dictionary of actor-level metrics (for parallel processing)
         errors: List of error messages encountered during processing
+        lazy_evaluation_enabled: Whether lazy evaluation was used
+        memory_release_enabled: Whether memory release was enabled
     
     Example:
         >>> result = ProcessingResult(
@@ -49,7 +55,10 @@ class ProcessingResult:
         ...     selected_frames=250,
         ...     processing_time=12.5,
         ...     stage_metrics={},
-        ...     errors=[]
+        ...     actor_metrics={},
+        ...     errors=[],
+        ...     lazy_evaluation_enabled=True,
+        ...     memory_release_enabled=True
         ... )
         >>> print(f"Selected {result.selected_frames}/{result.total_frames} frames")
         Selected 250/1000 frames
@@ -57,6 +66,7 @@ class ProcessingResult:
     Requirements:
         - 9.4: Logs processing statistics
         - 9.5: Returns summary with performance metrics
+        - 10.6: Provides actor health and throughput monitoring
     """
     
     session_id: str
@@ -66,7 +76,10 @@ class ProcessingResult:
     selected_frames: int
     processing_time: float
     stage_metrics: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    actor_metrics: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     errors: List[str] = field(default_factory=list)
+    lazy_evaluation_enabled: bool = False
+    memory_release_enabled: bool = False
     
     def __str__(self) -> str:
         """Human-readable summary of processing results."""
@@ -74,6 +87,7 @@ class ProcessingResult:
             f"ProcessingResult(session={self.session_id}, "
             f"frames={self.selected_frames}/{self.total_frames} selected, "
             f"time={self.processing_time:.2f}s, "
+            f"throughput={self.get_throughput():.1f} fps, "
             f"errors={len(self.errors)})"
         )
     
@@ -98,6 +112,88 @@ class ProcessingResult:
         if self.processing_time == 0:
             return 0.0
         return self.total_frames / self.processing_time
+    
+    def get_summary(self) -> Dict[str, Any]:
+        """
+        Get a comprehensive summary dictionary of all metrics.
+        
+        Returns:
+            Dictionary containing all metrics in a serializable format
+        """
+        return {
+            'session_id': self.session_id,
+            'total_frames': self.total_frames,
+            'processed_frames': self.processed_frames,
+            'filtered_frames': self.filtered_frames,
+            'selected_frames': self.selected_frames,
+            'processing_time': self.processing_time,
+            'throughput_fps': self.get_throughput(),
+            'selection_rate_percent': self.get_selection_rate(),
+            'error_count': len(self.errors),
+            'stage_metrics': self.stage_metrics,
+            'actor_metrics': self.actor_metrics,
+            'optimizations': {
+                'lazy_evaluation': self.lazy_evaluation_enabled,
+                'memory_release': self.memory_release_enabled
+            }
+        }
+    
+    def print_summary(self) -> None:
+        """Print a detailed summary of processing results to stdout."""
+        print(f"\n{'='*60}")
+        print(f"Processing Session: {self.session_id}")
+        print(f"{'='*60}")
+        print(f"Frames: {self.selected_frames}/{self.total_frames} selected "
+              f"({self.get_selection_rate():.1f}%)")
+        print(f"Filtered: {self.filtered_frames} frames")
+        print(f"Processing Time: {self.processing_time:.2f}s")
+        print(f"Throughput: {self.get_throughput():.1f} fps")
+        print(f"Errors: {len(self.errors)}")
+        
+        if self.lazy_evaluation_enabled or self.memory_release_enabled:
+            print(f"\nOptimizations:")
+            if self.lazy_evaluation_enabled:
+                print(f"  - Lazy evaluation: enabled")
+            if self.memory_release_enabled:
+                print(f"  - Memory release: enabled")
+        
+        if self.stage_metrics:
+            print(f"\nStage Metrics:")
+            for stage_name, metrics in self.stage_metrics.items():
+                stage_type = metrics.get('type', 'unknown')
+                frames_processed = metrics.get('frames_processed', 0)
+                errors = metrics.get('errors', 0)
+                
+                print(f"  {stage_name} ({stage_type}):")
+                print(f"    Frames processed: {frames_processed}")
+                
+                if stage_type == 'filter':
+                    frames_passed = metrics.get('frames_passed', 0)
+                    frames_filtered = metrics.get('frames_filtered', 0)
+                    print(f"    Frames passed: {frames_passed}")
+                    print(f"    Frames filtered: {frames_filtered}")
+                
+                if errors > 0:
+                    print(f"    Errors: {errors}")
+                
+                if metrics.get('lazy_evaluated', False):
+                    print(f"    Lazy evaluated: yes")
+        
+        if self.actor_metrics:
+            print(f"\nActor Metrics:")
+            for actor_id, metrics in self.actor_metrics.items():
+                print(f"  {actor_id}:")
+                for key, value in metrics.items():
+                    print(f"    {key}: {value}")
+        
+        if self.errors:
+            print(f"\nErrors ({len(self.errors)}):")
+            for i, error in enumerate(self.errors[:5], 1):  # Show first 5 errors
+                print(f"  {i}. {error}")
+            if len(self.errors) > 5:
+                print(f"  ... and {len(self.errors) - 5} more")
+        
+        print(f"{'='*60}\n")
 
 
 class FrameProcessor:
@@ -144,7 +240,9 @@ class FrameProcessor:
         strategy: Optional[FilterStrategy] = None,
         n_workers: int = 1,
         use_gpu: bool = False,
-        gpu_batch_size: int = 32
+        gpu_batch_size: int = 32,
+        lazy_evaluation: bool = True,
+        release_memory: bool = True
     ):
         """
         Initialize frame processor with pipeline or strategy.
@@ -160,6 +258,10 @@ class FrameProcessor:
                     GPU dependencies to be installed. Default is False.
             gpu_batch_size: Batch size for GPU processing. Larger values improve
                            throughput but use more GPU memory. Default is 32.
+            lazy_evaluation: Enable lazy tag computation (compute only when required
+                           by filters). Default is True for better performance.
+            release_memory: Release frame_data from memory after filtering out frames.
+                          Default is True to reduce memory usage.
         
         Raises:
             ConfigurationError: If pipeline configuration is invalid
@@ -175,8 +277,13 @@ class FrameProcessor:
             >>> strategy = BlurRemovalStrategy(threshold=100.0)
             >>> processor = FrameProcessor(strategy=strategy)
             >>> 
-            >>> # Parallel processing
-            >>> processor = FrameProcessor(strategy=strategy, n_workers=4)
+            >>> # Parallel processing with memory optimization
+            >>> processor = FrameProcessor(
+            ...     strategy=strategy,
+            ...     n_workers=4,
+            ...     lazy_evaluation=True,
+            ...     release_memory=True
+            ... )
         """
         # Validate parameters
         if n_workers < 1:
@@ -189,6 +296,8 @@ class FrameProcessor:
         self.n_workers = n_workers
         self.use_gpu = use_gpu
         self.gpu_batch_size = gpu_batch_size
+        self.lazy_evaluation = lazy_evaluation
+        self.release_memory = release_memory
         
         # Build pipeline from strategy or use provided pipeline
         if strategy is not None:
@@ -205,9 +314,19 @@ class FrameProcessor:
         # Validate pipeline configuration
         self._validate_pipeline()
         
+        # Build lazy evaluation plan if enabled
+        if self.lazy_evaluation:
+            self._build_lazy_evaluation_plan()
+        
+        # Initialize actor pipeline reference (created lazily when needed)
+        self._actor_pipeline = None
+        self._actor_pipeline_initialized = False
+        
         logger.info(
             f"FrameProcessor initialized: {len(self.pipeline)} components, "
-            f"{n_workers} workers, GPU={'enabled' if use_gpu else 'disabled'}"
+            f"{n_workers} workers, GPU={'enabled' if use_gpu else 'disabled'}, "
+            f"lazy_evaluation={'enabled' if lazy_evaluation else 'disabled'}, "
+            f"release_memory={'enabled' if release_memory else 'disabled'}"
         )
     
     def _validate_pipeline(self) -> None:
@@ -262,6 +381,49 @@ class FrameProcessor:
                 )
         
         logger.info(f"Pipeline validation successful: {len(self.pipeline)} components")
+    
+    def _build_lazy_evaluation_plan(self) -> None:
+        """
+        Build lazy evaluation plan for optimized tag computation.
+        
+        Analyzes the pipeline to determine which taggers are actually needed
+        by downstream filters. This allows us to skip computing tags that
+        are never used, improving performance.
+        
+        Creates a mapping of which taggers need to be executed before each filter.
+        
+        Requirements:
+            - 6.6: Supports lazy evaluation, computing tags only when required
+        """
+        if not self.pipeline:
+            self._lazy_plan = {}
+            return
+        
+        # Build reverse dependency map: which filters need which tags
+        filter_dependencies = {}
+        
+        for i, component in enumerate(self.pipeline):
+            if isinstance(component, Filter):
+                required_tags = set(component.required_tags)
+                filter_dependencies[i] = required_tags
+        
+        # Build forward map: which taggers provide which tags
+        tagger_provides = {}
+        for i, component in enumerate(self.pipeline):
+            if isinstance(component, Tagger):
+                for tag_key in component.tag_keys:
+                    tagger_provides[tag_key] = i
+        
+        # Build lazy execution plan: for each filter, which taggers must run first
+        self._lazy_plan = {}
+        for filter_idx, required_tags in filter_dependencies.items():
+            needed_taggers = set()
+            for tag in required_tags:
+                if tag in tagger_provides:
+                    needed_taggers.add(tagger_provides[tag])
+            self._lazy_plan[filter_idx] = sorted(needed_taggers)
+        
+        logger.debug(f"Built lazy evaluation plan: {self._lazy_plan}")
     
     @classmethod
     def with_blur_removal(cls, threshold: float = 100.0, **kwargs) -> 'FrameProcessor':
@@ -403,6 +565,9 @@ class FrameProcessor:
         are applied in sequence with short-circuit evaluation (if any filter fails,
         subsequent filters are not evaluated).
         
+        When n_workers > 1, uses actor-based distributed processing for parallel
+        execution. When n_workers = 1, uses single-threaded processing.
+        
         Args:
             source: Input source, one of:
                    - str: Path to video file (uses load_video_frames)
@@ -421,8 +586,13 @@ class FrameProcessor:
             If return_result=True: Tuple of (Iterator, ProcessingResult)
         
         Example:
-            >>> # Process video file
+            >>> # Process video file (single-threaded)
             >>> processor = FrameProcessor.with_blur_removal()
+            >>> for frame in processor.process('video.mp4'):
+            ...     save_frame(frame)
+            >>> 
+            >>> # Process with parallel execution
+            >>> processor = FrameProcessor.with_blur_removal(n_workers=4)
             >>> for frame in processor.process('video.mp4'):
             ...     save_frame(frame)
             >>> 
@@ -431,26 +601,52 @@ class FrameProcessor:
             >>> for frame in frames:
             ...     save_frame(frame)
             >>> print(f"Selected {result.selected_frames} frames")
-            >>> 
-            >>> # Process frame iterator
-            >>> frames = load_frames_from_source()
-            >>> for frame in processor.process(frames):
-            ...     analyze_frame(frame)
         
         Requirements:
             - 5.4: Allows filters to access tags from any previously executed tagger
             - 6.1: Processes frames in streaming fashion without loading entire video
+            - 6.2: Uses xoscar Actor Model for distributed processing
+            - 6.3: Provides configurable parallelism settings
+            - 6.4: Falls back to single-threaded when n_workers=1
             - 7.2: Accepts video file paths, frame iterators, or frame lists
             - 7.3: Returns iterator of FramePackets that passed all filters
             - 9.4: Logs processing statistics
             - 9.5: Returns summary with performance metrics
+        """
+        # Determine processing mode based on n_workers
+        if self.n_workers > 1 and self.pipeline:
+            # Use actor-based parallel processing
+            return self._process_with_actors(source, session_id, return_result)
+        else:
+            # Use single-threaded processing
+            return self._process_single_threaded(source, session_id, return_result)
+    
+    def _process_single_threaded(
+        self,
+        source: Union[str, Iterator[VideoFramePacket], List[VideoFramePacket]],
+        session_id: Optional[str] = None,
+        return_result: bool = False
+    ) -> Union[Iterator[VideoFramePacket], tuple[Iterator[VideoFramePacket], ProcessingResult]]:
+        """
+        Process frames using single-threaded execution.
+        
+        This is the fallback processing mode when n_workers=1 or when the
+        pipeline is empty.
+        
+        Args:
+            source: Input source (video file, iterator, or list)
+            session_id: Optional session identifier
+            return_result: Whether to return ProcessingResult
+            
+        Returns:
+            Iterator of processed frames, optionally with ProcessingResult
         """
         # Generate session ID if not provided
         if session_id is None:
             import uuid
             session_id = str(uuid.uuid4())[:8]
         
-        logger.info(f"Starting processing session {session_id}")
+        logger.info(f"Starting single-threaded processing session {session_id}")
         
         # Initialize metrics tracking
         metrics = {
@@ -498,17 +694,18 @@ class FrameProcessor:
         
         if return_result:
             # Create ProcessingResult that will be populated after iteration completes
-            # Note: This is a simplified approach - for full metrics, the caller must
-            # consume the entire iterator
             result = ProcessingResult(
                 session_id=session_id,
-                total_frames=0,  # Will be updated during iteration
+                total_frames=0,
                 processed_frames=0,
                 filtered_frames=0,
                 selected_frames=0,
                 processing_time=0.0,
                 stage_metrics={},
-                errors=[]
+                actor_metrics={},
+                errors=[],
+                lazy_evaluation_enabled=self.lazy_evaluation,
+                memory_release_enabled=self.release_memory
             )
             
             # Wrap iterator to update result after completion
@@ -528,6 +725,164 @@ class FrameProcessor:
             return iterator_with_result(), result
         else:
             return iterator
+    
+    def _process_with_actors(
+        self,
+        source: Union[str, Iterator[VideoFramePacket], List[VideoFramePacket]],
+        session_id: Optional[str] = None,
+        return_result: bool = False
+    ) -> Union[Iterator[VideoFramePacket], tuple[Iterator[VideoFramePacket], ProcessingResult]]:
+        """
+        Process frames using actor-based parallel execution.
+        
+        This method uses ActorPipeline for distributed processing across
+        multiple CPU cores when n_workers > 1.
+        
+        Args:
+            source: Input source (video file, iterator, or list)
+            session_id: Optional session identifier
+            return_result: Whether to return ProcessingResult
+            
+        Returns:
+            Iterator of processed frames, optionally with ProcessingResult
+        """
+        # Generate session ID if not provided
+        if session_id is None:
+            import uuid
+            session_id = str(uuid.uuid4())[:8]
+        
+        logger.info(
+            f"Starting actor-based processing session {session_id} "
+            f"with {self.n_workers} workers"
+        )
+        
+        # Initialize metrics tracking
+        metrics = {
+            'session_id': session_id,
+            'total_frames': 0,
+            'processed_frames': 0,
+            'filtered_frames': 0,
+            'selected_frames': 0,
+            'errors': [],
+            'stage_metrics': {},
+            'start_time': time.time()
+        }
+        
+        # Convert source to frame iterator
+        frame_iterator = self._get_frame_iterator(source)
+        
+        # Create processing iterator with actor pipeline
+        def process_with_actors():
+            # Initialize actor pipeline
+            actor_pipeline = self._get_or_create_actor_pipeline()
+            
+            try:
+                # Initialize actors if not already initialized
+                if not actor_pipeline.is_initialized():
+                    asyncio.run(actor_pipeline.initialize())
+                
+                # Process frames through actor pipeline
+                for packet in frame_iterator:
+                    metrics['total_frames'] += 1
+                    metrics['processed_frames'] += 1
+                    
+                    try:
+                        # Process frame through actor pipeline
+                        result = asyncio.run(actor_pipeline.process_frame(packet))
+                        
+                        if result is not None:
+                            metrics['selected_frames'] += 1
+                            yield result
+                        else:
+                            metrics['filtered_frames'] += 1
+                            
+                    except Exception as e:
+                        error_msg = f"Frame {packet.frame_number}: Actor processing error: {e}"
+                        logger.error(error_msg)
+                        metrics['errors'].append(error_msg)
+                        metrics['filtered_frames'] += 1
+                
+                # Log final statistics
+                processing_time = time.time() - metrics['start_time']
+                logger.info(
+                    f"Session {session_id} complete: "
+                    f"{metrics['total_frames']} frames processed, "
+                    f"{metrics['selected_frames']} frames passed "
+                    f"({metrics['selected_frames']/metrics['total_frames']*100:.1f}%), "
+                    f"time={processing_time:.2f}s"
+                    if metrics['total_frames'] > 0 else
+                    f"Session {session_id} complete: 0 frames processed"
+                )
+                
+            finally:
+                # Shutdown actor pipeline after processing
+                if actor_pipeline.is_initialized():
+                    asyncio.run(actor_pipeline.shutdown())
+        
+        iterator = process_with_actors()
+        
+        if return_result:
+            # Create ProcessingResult that will be populated after iteration completes
+            result = ProcessingResult(
+                session_id=session_id,
+                total_frames=0,
+                processed_frames=0,
+                filtered_frames=0,
+                selected_frames=0,
+                processing_time=0.0,
+                stage_metrics={},
+                actor_metrics={},
+                errors=[],
+                lazy_evaluation_enabled=self.lazy_evaluation,
+                memory_release_enabled=self.release_memory
+            )
+            
+            # Wrap iterator to update result after completion
+            def iterator_with_result():
+                for frame in iterator:
+                    yield frame
+                
+                # Update result after iteration completes
+                result.total_frames = metrics['total_frames']
+                result.processed_frames = metrics['processed_frames']
+                result.filtered_frames = metrics['filtered_frames']
+                result.selected_frames = metrics['selected_frames']
+                result.processing_time = time.time() - metrics['start_time']
+                result.stage_metrics = metrics['stage_metrics']
+                result.actor_metrics = metrics.get('actor_metrics', {})
+                result.errors = metrics['errors']
+            
+            return iterator_with_result(), result
+        else:
+            return iterator
+    
+    def _get_or_create_actor_pipeline(self):
+        """
+        Get or create the ActorPipeline instance.
+        
+        Lazily creates the ActorPipeline when needed for parallel processing.
+        Uses a unique address for each instance to avoid port conflicts.
+        
+        Returns:
+            ActorPipeline instance configured with current pipeline
+        """
+        if self._actor_pipeline is None:
+            from decimatr.actors.pipeline import ActorPipeline
+            import random
+            
+            # Use a random port to avoid conflicts between multiple processors
+            port = random.randint(20000, 30000)
+            address = f'127.0.0.1:{port}'
+            
+            self._actor_pipeline = ActorPipeline(
+                pipeline=self.pipeline,
+                n_workers=self.n_workers,
+                use_gpu=self.use_gpu,
+                address=address
+            )
+            logger.info(f"Created ActorPipeline with {self.n_workers} workers at {address}")
+        
+        return self._actor_pipeline
     
     def _get_frame_iterator(
         self,
@@ -581,6 +936,31 @@ class FrameProcessor:
         sequentially with short-circuit evaluation. If any filter fails,
         the frame is filtered out and subsequent filters are not evaluated.
         
+        With lazy evaluation enabled, only computes tags that are needed by
+        downstream filters. With memory release enabled, clears frame_data
+        from filtered frames to reduce memory usage.
+        
+        Args:
+            packet: VideoFramePacket to process
+        
+        Returns:
+            VideoFramePacket if it passes all filters, None if filtered out
+        
+        Requirements:
+            - 6.6: Supports lazy evaluation, computing tags only when required
+            - 6.7: Releases frame data from memory after filtering
+        """
+        if self.lazy_evaluation and self._lazy_plan:
+            # Lazy evaluation: compute tags on-demand as filters need them
+            return self._process_frame_lazy(packet)
+        else:
+            # Eager evaluation: compute all tags upfront
+            return self._process_frame_eager(packet)
+    
+    def _process_frame_eager(self, packet: VideoFramePacket) -> Optional[VideoFramePacket]:
+        """
+        Process frame with eager tag computation (all tags computed upfront).
+        
         Args:
             packet: VideoFramePacket to process
         
@@ -614,6 +994,9 @@ class FrameProcessor:
                             f"Frame {packet.frame_number}: "
                             f"filtered by {type(component).__name__}"
                         )
+                        # Release frame data if memory release is enabled
+                        if self.release_memory:
+                            packet.frame_data = np.zeros((1, 1, 3), dtype=np.uint8)
                         return None  # Frame filtered out, stop processing
                     
                     logger.debug(
@@ -625,6 +1008,83 @@ class FrameProcessor:
                         f"Frame {packet.frame_number}: "
                         f"{type(component).__name__} error: {e}"
                     )
+                    # Release frame data if memory release is enabled
+                    if self.release_memory:
+                        packet.frame_data = np.zeros((1, 1, 3), dtype=np.uint8)
+                    # Filter error means frame doesn't pass
+                    return None
+        
+        # Frame passed all filters
+        return packet
+    
+    def _process_frame_lazy(self, packet: VideoFramePacket) -> Optional[VideoFramePacket]:
+        """
+        Process frame with lazy tag computation (tags computed on-demand).
+        
+        Only computes tags that are actually needed by downstream filters,
+        skipping unnecessary computation for better performance.
+        
+        Args:
+            packet: VideoFramePacket to process
+        
+        Returns:
+            VideoFramePacket if it passes all filters, None if filtered out
+        """
+        # Track which taggers have been executed
+        executed_taggers = set()
+        
+        # Process filters in order, computing tags on-demand
+        for i, component in enumerate(self.pipeline):
+            if isinstance(component, Filter):
+                # Check if we need to compute any tags for this filter
+                if i in self._lazy_plan:
+                    needed_taggers = self._lazy_plan[i]
+                    
+                    # Execute taggers that haven't been executed yet
+                    for tagger_idx in needed_taggers:
+                        if tagger_idx not in executed_taggers:
+                            tagger = self.pipeline[tagger_idx]
+                            try:
+                                tags = tagger.compute_tags(packet)
+                                packet.tags.update(tags)
+                                executed_taggers.add(tagger_idx)
+                                logger.debug(
+                                    f"Frame {packet.frame_number}: "
+                                    f"{type(tagger).__name__} computed tags {list(tags.keys())} "
+                                    f"(lazy evaluation)"
+                                )
+                            except Exception as e:
+                                logger.error(
+                                    f"Frame {packet.frame_number}: "
+                                    f"{type(tagger).__name__} failed: {e}"
+                                )
+                                # Mark as executed even if failed to avoid retry
+                                executed_taggers.add(tagger_idx)
+                
+                # Now apply the filter
+                try:
+                    if not component.should_pass(packet):
+                        logger.debug(
+                            f"Frame {packet.frame_number}: "
+                            f"filtered by {type(component).__name__}"
+                        )
+                        # Release frame data if memory release is enabled
+                        if self.release_memory:
+                            packet.frame_data = np.zeros((1, 1, 3), dtype=np.uint8)
+                        return None  # Frame filtered out, stop processing
+                    
+                    logger.debug(
+                        f"Frame {packet.frame_number}: "
+                        f"passed {type(component).__name__}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Frame {packet.frame_number}: "
+                        f"{type(component).__name__} error: {e}"
+                    )
+                    # Release frame data if memory release is enabled
+                    if self.release_memory:
+                        packet.frame_data = np.zeros((1, 1, 3), dtype=np.uint8)
                     # Filter error means frame doesn't pass
                     return None
         
@@ -640,7 +1100,7 @@ class FrameProcessor:
         Process a single frame through the pipeline with metrics tracking.
         
         This method wraps _process_frame to add detailed metrics tracking
-        for each stage of the pipeline.
+        for each stage of the pipeline. Supports both lazy and eager evaluation.
         
         Args:
             packet: VideoFramePacket to process
@@ -650,9 +1110,22 @@ class FrameProcessor:
             VideoFramePacket if it passes all filters, None if filtered out
         
         Requirements:
+            - 6.6: Supports lazy evaluation, computing tags only when required
+            - 6.7: Releases frame data from memory after filtering
             - 9.2: Logs frame-level errors and continues processing
             - 9.3: Supports configurable logging levels
         """
+        if self.lazy_evaluation and self._lazy_plan:
+            return self._process_frame_lazy_with_metrics(packet, metrics)
+        else:
+            return self._process_frame_eager_with_metrics(packet, metrics)
+    
+    def _process_frame_eager_with_metrics(
+        self,
+        packet: VideoFramePacket,
+        metrics: Dict[str, Any]
+    ) -> Optional[VideoFramePacket]:
+        """Process frame with eager evaluation and metrics tracking."""
         # Apply taggers sequentially to compute tags
         for component in self.pipeline:
             if isinstance(component, Tagger):
@@ -718,6 +1191,10 @@ class FrameProcessor:
                         metrics['stage_metrics'][component_name]['frames_evaluated'] += 1
                         metrics['stage_metrics'][component_name]['frames_filtered'] += 1
                         
+                        # Release frame data if memory release is enabled
+                        if self.release_memory:
+                            packet.frame_data = np.zeros((1, 1, 3), dtype=np.uint8)
+                        
                         return None  # Frame filtered out, stop processing
                     
                     logger.debug(
@@ -755,6 +1232,147 @@ class FrameProcessor:
                             'errors': 0
                         }
                     metrics['stage_metrics'][component_name]['errors'] += 1
+                    
+                    # Release frame data if memory release is enabled
+                    if self.release_memory:
+                        packet.frame_data = np.zeros((1, 1, 3), dtype=np.uint8)
+                    
+                    # Filter error means frame doesn't pass
+                    return None
+        
+        # Frame passed all filters
+        return packet
+    
+    def _process_frame_lazy_with_metrics(
+        self,
+        packet: VideoFramePacket,
+        metrics: Dict[str, Any]
+    ) -> Optional[VideoFramePacket]:
+        """Process frame with lazy evaluation and metrics tracking."""
+        # Track which taggers have been executed
+        executed_taggers = set()
+        
+        # Process filters in order, computing tags on-demand
+        for i, component in enumerate(self.pipeline):
+            if isinstance(component, Filter):
+                # Check if we need to compute any tags for this filter
+                if i in self._lazy_plan:
+                    needed_taggers = self._lazy_plan[i]
+                    
+                    # Execute taggers that haven't been executed yet
+                    for tagger_idx in needed_taggers:
+                        if tagger_idx not in executed_taggers:
+                            tagger = self.pipeline[tagger_idx]
+                            component_name = type(tagger).__name__
+                            
+                            try:
+                                tags = tagger.compute_tags(packet)
+                                packet.tags.update(tags)
+                                executed_taggers.add(tagger_idx)
+                                logger.debug(
+                                    f"Frame {packet.frame_number}: "
+                                    f"{component_name} computed tags {list(tags.keys())} "
+                                    f"(lazy evaluation)"
+                                )
+                                
+                                # Track tagger metrics
+                                if component_name not in metrics['stage_metrics']:
+                                    metrics['stage_metrics'][component_name] = {
+                                        'type': 'tagger',
+                                        'frames_processed': 0,
+                                        'errors': 0,
+                                        'lazy_evaluated': True
+                                    }
+                                metrics['stage_metrics'][component_name]['frames_processed'] += 1
+                                
+                            except Exception as e:
+                                error_msg = (
+                                    f"Frame {packet.frame_number}: "
+                                    f"{component_name} failed: {e}"
+                                )
+                                logger.error(error_msg)
+                                metrics['errors'].append(error_msg)
+                                
+                                # Track error in metrics
+                                if component_name not in metrics['stage_metrics']:
+                                    metrics['stage_metrics'][component_name] = {
+                                        'type': 'tagger',
+                                        'frames_processed': 0,
+                                        'errors': 0,
+                                        'lazy_evaluated': True
+                                    }
+                                metrics['stage_metrics'][component_name]['errors'] += 1
+                                
+                                # Mark as executed even if failed to avoid retry
+                                executed_taggers.add(tagger_idx)
+                
+                # Now apply the filter
+                component_name = type(component).__name__
+                
+                try:
+                    if not component.should_pass(packet):
+                        logger.debug(
+                            f"Frame {packet.frame_number}: "
+                            f"filtered by {component_name}"
+                        )
+                        
+                        # Track filter metrics
+                        if component_name not in metrics['stage_metrics']:
+                            metrics['stage_metrics'][component_name] = {
+                                'type': 'filter',
+                                'frames_evaluated': 0,
+                                'frames_passed': 0,
+                                'frames_filtered': 0,
+                                'errors': 0
+                            }
+                        metrics['stage_metrics'][component_name]['frames_evaluated'] += 1
+                        metrics['stage_metrics'][component_name]['frames_filtered'] += 1
+                        
+                        # Release frame data if memory release is enabled
+                        if self.release_memory:
+                            packet.frame_data = np.zeros((1, 1, 3), dtype=np.uint8)
+                        
+                        return None  # Frame filtered out, stop processing
+                    
+                    logger.debug(
+                        f"Frame {packet.frame_number}: "
+                        f"passed {component_name}"
+                    )
+                    
+                    # Track filter metrics
+                    if component_name not in metrics['stage_metrics']:
+                        metrics['stage_metrics'][component_name] = {
+                            'type': 'filter',
+                            'frames_evaluated': 0,
+                            'frames_passed': 0,
+                            'frames_filtered': 0,
+                            'errors': 0
+                        }
+                    metrics['stage_metrics'][component_name]['frames_evaluated'] += 1
+                    metrics['stage_metrics'][component_name]['frames_passed'] += 1
+                    
+                except Exception as e:
+                    error_msg = (
+                        f"Frame {packet.frame_number}: "
+                        f"{component_name} error: {e}"
+                    )
+                    logger.error(error_msg)
+                    metrics['errors'].append(error_msg)
+                    
+                    # Track error in metrics
+                    if component_name not in metrics['stage_metrics']:
+                        metrics['stage_metrics'][component_name] = {
+                            'type': 'filter',
+                            'frames_evaluated': 0,
+                            'frames_passed': 0,
+                            'frames_filtered': 0,
+                            'errors': 0
+                        }
+                    metrics['stage_metrics'][component_name]['errors'] += 1
+                    
+                    # Release frame data if memory release is enabled
+                    if self.release_memory:
+                        packet.frame_data = np.zeros((1, 1, 3), dtype=np.uint8)
                     
                     # Filter error means frame doesn't pass
                     return None

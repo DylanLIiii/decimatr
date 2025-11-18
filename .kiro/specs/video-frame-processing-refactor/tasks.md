@@ -209,13 +209,13 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
 
 ## Phase 7: Actor-Based Distributed Processing
 
-- [-] 15. Set up xoscar actor infrastructure. To set it up, alwasy use context7 to read and search this [Xoscar Actor Model](https://github.com/xorbitsai/xoscar)
-- [ ] 15.1 Add xoscar dependency
+- [x] 15. Set up xoscar actor infrastructure. To set it up, alwasy use context7 to read and search this [Xoscar Actor Model](https://github.com/xorbitsai/xoscar)
+- [x] 15.1 Add xoscar dependency
   - Update `pyproject.toml` to include `xoscar>=0.3.0`
   - Add to CPU-only dependencies (default)
   - _Requirements: 6.2, 10.1_
 
-- [ ] 15.2 Create TaggerActor
+- [x] 15.2 Create TaggerActor
   - Create `decimatr/actors/tagger_actor.py`
   - Decorate with `@xo.actor`
   - Accept Tagger instance in `__init__`
@@ -223,7 +223,7 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
   - Update packet tags and return packet
   - _Requirements: 6.2, 10.1, 10.2_
 
-- [ ] 15.3 Create FilterActor
+- [x] 15.3 Create FilterActor
   - Create `decimatr/actors/filter_actor.py`
   - Decorate with `@xo.actor`
   - Accept StatelessFilter instance in `__init__`
@@ -231,7 +231,7 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
   - Return packet if passes, None if filtered
   - _Requirements: 6.2, 10.1, 10.2_
 
-- [ ] 15.4 Create StatefulFilterActor
+- [x] 15.4 Create StatefulFilterActor
   - Create `decimatr/actors/stateful_actor.py`
   - Decorate with `@xo.actor`
   - Accept StatefulFilter instance in `__init__`
@@ -240,8 +240,8 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
   - Add passing frames to buffer
   - _Requirements: 6.2, 10.1, 10.2, 10.4_
 
-- [ ] 16. Implement ActorPipeline orchestration
-- [ ] 16.1 Create ActorPipeline class
+- [-] 16. Implement ActorPipeline orchestration
+- [x] 16.1 Create ActorPipeline class
   - Create `decimatr/actors/pipeline.py`
   - Accept pipeline components and n_workers in `__init__`
   - Implement `initialize()` to create actor pools
@@ -250,19 +250,19 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
   - Create actor pools for stateless components
   - _Requirements: 6.2, 6.3, 10.2, 10.3_
 
-- [ ] 16.2 Implement frame processing through actors
+- [x] 16.2 Implement frame processing through actors
   - Implement async `process_frame()` method
   - Route frame through pipeline stages sequentially
   - Handle None returns (filtered frames)
   - _Requirements: 6.3, 10.3_
 
-- [ ] 16.3 Add graceful shutdown
+- [x] 16.3 Add graceful shutdown
   - Implement async `shutdown()` method
   - Destroy all actor pools
   - Ensure in-flight frames are processed
   - _Requirements: 10.5_
 
-- [ ] 17. Integrate ActorPipeline into FrameProcessor
+- [x] 17. Integrate ActorPipeline into FrameProcessor
   - Add `n_workers` parameter to FrameProcessor
   - Create ActorPipeline when n_workers > 1
   - Use actor-based processing for parallel execution
@@ -296,7 +296,7 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
 
 ## Phase 9: Performance Optimizations
 
-- [ ] 19. Implement lazy evaluation and memory management
+- [x] 19. Implement lazy evaluation and memory management
   - Add lazy tag computation (compute only when required by filters)
   - Release frame_data from memory after filtering
   - Implement frame batching for throughput optimization
@@ -314,7 +314,7 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
 
 ## Phase 10: Documentation and Examples
 
-- [ ] 21. Create comprehensive API documentation
+- [x] 21. Create comprehensive API documentation
   - Document all public classes and methods
   - Add docstrings with type hints
   - Create usage examples for common scenarios
