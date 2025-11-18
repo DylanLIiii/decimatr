@@ -18,7 +18,7 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
   - Maintain backward compatibility with existing code
   - _Requirements: 1.1, 1.4_
 
-- [ ] 2. Create Tagger base class and interface
+- [x] 2. Create Tagger base class and interface
   - Create `decimatr/taggers/base.py` with abstract `Tagger` class
   - Define `compute_tags()` abstract method that returns `Dict[str, Any]`
   - Define `tag_keys` property to list produced tag keys
@@ -26,7 +26,7 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
   - Add optional `compute_tags_batch()` method for GPU processing
   - _Requirements: 1.2, 1.3_
 
-- [ ] 3. Create Filter base classes
+- [x] 3. Create Filter base classes
   - Create `decimatr/filters/base.py` with abstract `Filter` class
   - Define `should_pass()` abstract method returning boolean
   - Define `required_tags` property listing needed tag keys
@@ -35,7 +35,7 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
   - Add `compare_with_history()` abstract method to `StatefulFilter`
   - _Requirements: 2.1, 2.2, 3.1, 3.2_
 
-- [ ] 4. Implement TemporalBuffer utility
+- [x] 4. Implement TemporalBuffer utility
   - Create `decimatr/core/temporal_buffer.py`
   - Implement sliding window with `deque` (O(1) insertion)
   - Add `add()`, `get_window()`, `find_similar()` methods
