@@ -72,27 +72,27 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
 
 ## Phase 3: Stateless and Stateful Filters
 
-- [ ] 9. Implement stateless filters
-- [ ] 9.1 Create ThresholdFilter (generic)
+- [x] 9. Implement stateless filters
+- [x] 9.1 Create ThresholdFilter (generic)
   - Create `decimatr/filters/threshold.py`
   - Accept tag_key and threshold parameters
   - Support comparison operators (>, <, >=, <=, ==)
   - _Requirements: 2.1, 2.2, 2.4_
 
-- [ ] 9.2 Create BlurFilter
+- [x] 9.2 Create BlurFilter
   - Create `decimatr/filters/blur.py`
   - Use ThresholdFilter pattern for blur_score
   - Default threshold: 100.0
   - _Requirements: 2.1, 2.2, 2.4_
 
-- [ ] 9.3 Create EntropyFilter
+- [x] 9.3 Create EntropyFilter
   - Create `decimatr/filters/entropy.py`
   - Filter frames below entropy threshold
   - Default threshold: 4.0
   - _Requirements: 2.1, 2.2, 2.4_
 
-- [ ] 10. Implement stateful filters
-- [ ] 10.1 Create DuplicateFilter
+- [x] 10. Implement stateful filters
+- [x] 10.1 Create DuplicateFilter
   - Create `decimatr/filters/duplicate.py`
   - Migrate duplicate detection logic from HashGate
   - Maintain TemporalBuffer of recent frame hashes
@@ -101,14 +101,14 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
   - Support configurable hash similarity threshold
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 10.2 Create MotionFilter
+- [x] 10.2 Create MotionFilter
   - Create `decimatr/filters/motion.py`
   - Detect scene changes via frame differencing
   - Maintain buffer of recent frames
   - Calculate frame difference metrics
   - _Requirements: 3.1, 3.2, 3.3_
 
-- [ ] 10.3 Create DiversityFilter
+- [x] 10.3 Create DiversityFilter
   - Create `decimatr/filters/diversity.py`
   - Select frames maximizing tag diversity
   - Maintain buffer with diversity scoring
@@ -119,26 +119,26 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
 
 ## Phase 4: FilterStrategy Patterns
 
-- [ ] 11. Create FilterStrategy base class
+- [x] 11. Create FilterStrategy base class
   - Create `decimatr/strategies/base.py`
   - Define abstract `build_pipeline()` method
   - Return list of Taggers and Filters in order
   - _Requirements: 4.1, 5.1_
 
-- [ ] 12. Implement predefined strategies
-- [ ] 12.1 Create BlurRemovalStrategy
+- [x] 12. Implement predefined strategies
+- [x] 12.1 Create BlurRemovalStrategy
   - Create `decimatr/strategies/blur_removal.py`
   - Pipeline: [BlurTagger(), BlurFilter(threshold)]
   - Accept configurable threshold parameter
   - _Requirements: 4.1, 4.2_
 
-- [ ] 12.2 Create DuplicateDetectionStrategy
+- [x] 12.2 Create DuplicateDetectionStrategy
   - Create `decimatr/strategies/duplicate_detection.py`
   - Pipeline: [HashTagger(), DuplicateFilter(threshold, window_size)]
   - Accept configurable threshold and window_size
   - _Requirements: 4.1, 4.3_
 
-- [ ] 12.3 Create SmartSamplingStrategy
+- [x] 12.3 Create SmartSamplingStrategy
   - Create `decimatr/strategies/smart_sampling.py`
   - Pipeline: [BlurTagger(), HashTagger(), EntropyTagger(), BlurFilter(), DuplicateFilter(), DiversityFilter()]
   - Combine blur removal, duplicate detection, and diversity

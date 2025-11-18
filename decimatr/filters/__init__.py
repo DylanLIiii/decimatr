@@ -6,9 +6,21 @@ based on their tags and temporal context.
 """
 
 from decimatr.filters.base import Filter, StatelessFilter, StatefulFilter
+from decimatr.filters.threshold import ThresholdFilter
+from decimatr.filters.blur import BlurFilter
+from decimatr.filters.entropy import EntropyFilter
+from decimatr.filters.duplicate import DuplicateFilter
+from decimatr.filters.motion import MotionFilter
+from decimatr.filters.diversity import DiversityFilter
 
 __all__ = [
     "Filter",
     "StatelessFilter",
     "StatefulFilter",
+    "ThresholdFilter",
+    "BlurFilter",
+    "EntropyFilter",
+    "DuplicateFilter",
+    "MotionFilter",
+    "DiversityFilter",
 ]
