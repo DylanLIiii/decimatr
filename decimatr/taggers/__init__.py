@@ -9,4 +9,11 @@ from decimatr.taggers.blur import BlurTagger
 from decimatr.taggers.entropy import EntropyTagger
 from decimatr.taggers.hash import HashTagger
 
-__all__ = ["Tagger", "BlurTagger", "EntropyTagger", "HashTagger"]
+# CLIPTagger is optional and requires GPU dependencies
+# Import it only if dependencies are available
+try:
+    from decimatr.taggers.clip import CLIPTagger
+    __all__ = ["Tagger", "BlurTagger", "EntropyTagger", "HashTagger", "CLIPTagger"]
+except ImportError:
+    # GPU dependencies not available, CLIPTagger not exported
+    __all__ = ["Tagger", "BlurTagger", "EntropyTagger", "HashTagger"]

@@ -148,8 +148,8 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
 
 ## Phase 5: GPU Capability Management
 
-- [ ] 13. Implement GPU detection and isolation
-- [ ] 13.1 Create GPUCapabilities utility
+- [x] 13. Implement GPU detection and isolation
+- [x] 13.1 Create GPUCapabilities utility
   - Create `decimatr/utils/gpu_utils.py`
   - Implement `is_available()` to check for torch and CUDA
   - Implement `get_missing_dependencies()` to list missing packages
@@ -157,12 +157,12 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
   - Cache detection results
   - _Requirements: 11.1, 11.2, 11.5_
 
-- [ ] 13.2 Create GPUDependencyError exception
+- [x] 13.2 Create GPUDependencyError exception
   - Add to `decimatr/exceptions.py`
   - Include helpful error message with installation instructions
   - _Requirements: 11.3_
 
-- [ ] 13.3 Implement CLIPTagger (optional GPU dependency)
+- [x] 13.3 Implement CLIPTagger (optional GPU dependency)
   - Create `decimatr/taggers/clip.py`
   - Check GPU availability in `__init__`
   - Raise GPUDependencyError if GPU requested but unavailable
@@ -176,15 +176,15 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
 
 ## Phase 6: Core FrameProcessor API
 
-- [ ] 14. Implement FrameProcessor main API
-- [ ] 14.1 Create basic FrameProcessor class
+- [x] 14. Implement FrameProcessor main API
+- [x] 14.1 Create basic FrameProcessor class
   - Create `decimatr/core/processor.py`
   - Accept pipeline or strategy in `__init__`
   - Validate pipeline configuration at initialization
   - Store pipeline components
   - _Requirements: 5.1, 5.2, 5.3, 7.1_
 
-- [ ] 14.2 Implement single-threaded processing
+- [x] 14.2 Implement single-threaded processing
   - Implement `process()` method accepting video path, iterator, or list
   - Integrate with existing `load_video_frames()` for video files
   - Apply taggers sequentially to compute tags
@@ -192,13 +192,13 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
   - Yield FramePackets that pass all filters
   - _Requirements: 5.4, 6.1, 7.2, 7.3_
 
-- [ ] 14.3 Add builder methods for common configurations
+- [x] 14.3 Add builder methods for common configurations
   - Implement `with_blur_removal(threshold)` class method
   - Implement `with_duplicate_detection(threshold)` class method
   - Implement `with_smart_sampling()` class method
   - _Requirements: 7.4_
 
-- [ ] 14.4 Add error handling and logging
+- [x] 14.4 Add error handling and logging
   - Validate pipeline configuration, raise ConfigurationError
   - Log frame-level errors, continue processing
   - Support configurable logging levels
@@ -209,7 +209,7 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
 
 ## Phase 7: Actor-Based Distributed Processing
 
-- [ ] 15. Set up xoscar actor infrastructure
+- [-] 15. Set up xoscar actor infrastructure. To set it up, alwasy use context7 to read and search this [Xoscar Actor Model](https://github.com/xorbitsai/xoscar)
 - [ ] 15.1 Add xoscar dependency
   - Update `pyproject.toml` to include `xoscar>=0.3.0`
   - Add to CPU-only dependencies (default)

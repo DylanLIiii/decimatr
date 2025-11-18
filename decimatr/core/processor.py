@@ -1,0 +1,763 @@
+"""
+Core FrameProcessor API for video frame processing.
+
+This module provides the main entry point for processing video frames through
+configurable pipelines of taggers and filters. It supports both custom pipelines
+and predefined strategies for common use cases.
+"""
+
+import logging
+import time
+from dataclasses import dataclass, field
+from typing import Any, Dict, Iterator, List, Optional, Union
+
+from decimatr.exceptions import ConfigurationError
+from decimatr.filters.base import Filter
+from decimatr.scheme import VideoFramePacket
+from decimatr.strategies.base import FilterStrategy
+from decimatr.taggers.base import Tagger
+
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ProcessingResult:
+    """
+    Summary of a frame processing session.
+    
+    This class captures metrics and statistics from a processing session,
+    including frame counts, processing time, stage-level metrics, and any
+    errors encountered.
+    
+    Attributes:
+        session_id: Unique identifier for the processing session
+        total_frames: Total number of frames processed
+        processed_frames: Number of frames that completed processing
+        filtered_frames: Number of frames filtered out by filters
+        selected_frames: Number of frames that passed all filters
+        processing_time: Total processing time in seconds
+        stage_metrics: Dictionary of per-stage metrics (tagger/filter stats)
+        errors: List of error messages encountered during processing
+    
+    Example:
+        >>> result = ProcessingResult(
+        ...     session_id="abc123",
+        ...     total_frames=1000,
+        ...     processed_frames=1000,
+        ...     filtered_frames=750,
+        ...     selected_frames=250,
+        ...     processing_time=12.5,
+        ...     stage_metrics={},
+        ...     errors=[]
+        ... )
+        >>> print(f"Selected {result.selected_frames}/{result.total_frames} frames")
+        Selected 250/1000 frames
+    
+    Requirements:
+        - 9.4: Logs processing statistics
+        - 9.5: Returns summary with performance metrics
+    """
+    
+    session_id: str
+    total_frames: int
+    processed_frames: int
+    filtered_frames: int
+    selected_frames: int
+    processing_time: float
+    stage_metrics: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    errors: List[str] = field(default_factory=list)
+    
+    def __str__(self) -> str:
+        """Human-readable summary of processing results."""
+        return (
+            f"ProcessingResult(session={self.session_id}, "
+            f"frames={self.selected_frames}/{self.total_frames} selected, "
+            f"time={self.processing_time:.2f}s, "
+            f"errors={len(self.errors)})"
+        )
+    
+    def get_selection_rate(self) -> float:
+        """
+        Get the frame selection rate as a percentage.
+        
+        Returns:
+            Percentage of frames that passed all filters (0.0-100.0)
+        """
+        if self.total_frames == 0:
+            return 0.0
+        return (self.selected_frames / self.total_frames) * 100.0
+    
+    def get_throughput(self) -> float:
+        """
+        Get processing throughput in frames per second.
+        
+        Returns:
+            Number of frames processed per second
+        """
+        if self.processing_time == 0:
+            return 0.0
+        return self.total_frames / self.processing_time
+
+
+class FrameProcessor:
+    """
+    Main API for processing video frames through tagging and filtering pipelines.
+    
+    FrameProcessor orchestrates the execution of taggers (stateless frame analysis)
+    and filters (decision-making) to process video frames. It supports both custom
+    pipelines and predefined strategies for common use cases.
+    
+    The processor validates pipeline configuration at initialization and provides
+    a simple interface for processing video files, frame iterators, or frame lists.
+    
+    Attributes:
+        pipeline: Ordered list of taggers and filters to apply
+        n_workers: Number of worker threads/actors for parallel processing
+        use_gpu: Whether to enable GPU acceleration (requires GPU dependencies)
+        gpu_batch_size: Batch size for GPU processing
+        
+    Example:
+        >>> # Using a predefined strategy
+        >>> processor = FrameProcessor.with_blur_removal(threshold=100.0)
+        >>> for frame in processor.process('video.mp4'):
+        ...     process_frame(frame)
+        >>> 
+        >>> # Using a custom pipeline
+        >>> from decimatr.taggers.blur import BlurTagger
+        >>> from decimatr.filters.blur import BlurFilter
+        >>> pipeline = [BlurTagger(), BlurFilter(threshold=100.0)]
+        >>> processor = FrameProcessor(pipeline=pipeline)
+        >>> for frame in processor.process('video.mp4'):
+        ...     process_frame(frame)
+    
+    Requirements:
+        - 5.1: Accepts pipeline configuration specifying ordered sequence
+        - 5.2: Supports mixing stateless and stateful filters
+        - 5.3: Validates pipeline configuration at initialization
+        - 7.1: Provides single-method interface for processing
+    """
+    
+    def __init__(
+        self,
+        pipeline: Optional[List[Union[Tagger, Filter]]] = None,
+        strategy: Optional[FilterStrategy] = None,
+        n_workers: int = 1,
+        use_gpu: bool = False,
+        gpu_batch_size: int = 32
+    ):
+        """
+        Initialize frame processor with pipeline or strategy.
+        
+        Args:
+            pipeline: Custom pipeline of taggers and filters. If None and no
+                     strategy provided, uses pass-through (no filtering).
+            strategy: Predefined FilterStrategy. If provided, overrides pipeline.
+            n_workers: Number of worker threads/actors for parallel processing.
+                      Default is 1 (single-threaded). Values > 1 enable
+                      actor-based distributed processing.
+            use_gpu: Enable GPU acceleration for supported taggers. Requires
+                    GPU dependencies to be installed. Default is False.
+            gpu_batch_size: Batch size for GPU processing. Larger values improve
+                           throughput but use more GPU memory. Default is 32.
+        
+        Raises:
+            ConfigurationError: If pipeline configuration is invalid
+            ValueError: If n_workers or gpu_batch_size are invalid
+        
+        Example:
+            >>> # Custom pipeline
+            >>> pipeline = [BlurTagger(), BlurFilter(threshold=100.0)]
+            >>> processor = FrameProcessor(pipeline=pipeline)
+            >>> 
+            >>> # Using strategy
+            >>> from decimatr.strategies.blur_removal import BlurRemovalStrategy
+            >>> strategy = BlurRemovalStrategy(threshold=100.0)
+            >>> processor = FrameProcessor(strategy=strategy)
+            >>> 
+            >>> # Parallel processing
+            >>> processor = FrameProcessor(strategy=strategy, n_workers=4)
+        """
+        # Validate parameters
+        if n_workers < 1:
+            raise ValueError(f"n_workers must be at least 1, got {n_workers}")
+        
+        if gpu_batch_size < 1:
+            raise ValueError(f"gpu_batch_size must be at least 1, got {gpu_batch_size}")
+        
+        # Store configuration
+        self.n_workers = n_workers
+        self.use_gpu = use_gpu
+        self.gpu_batch_size = gpu_batch_size
+        
+        # Build pipeline from strategy or use provided pipeline
+        if strategy is not None:
+            self.pipeline = strategy.build_pipeline()
+            logger.info(f"Built pipeline from strategy: {strategy}")
+        elif pipeline is not None:
+            self.pipeline = pipeline
+            logger.info(f"Using custom pipeline with {len(pipeline)} components")
+        else:
+            # Default: pass-through (no filtering)
+            self.pipeline = []
+            logger.info("Using pass-through pipeline (no filtering)")
+        
+        # Validate pipeline configuration
+        self._validate_pipeline()
+        
+        logger.info(
+            f"FrameProcessor initialized: {len(self.pipeline)} components, "
+            f"{n_workers} workers, GPU={'enabled' if use_gpu else 'disabled'}"
+        )
+    
+    def _validate_pipeline(self) -> None:
+        """
+        Validate pipeline configuration.
+        
+        Checks that:
+        1. All components are valid Tagger or Filter instances
+        2. All filters have their required tags provided by upstream taggers
+        3. Component order is valid (taggers before filters that need their tags)
+        
+        Raises:
+            ConfigurationError: If pipeline configuration is invalid
+        """
+        if not self.pipeline:
+            # Empty pipeline is valid (pass-through)
+            return
+        
+        # Track which tags will be available at each stage
+        available_tags = set()
+        
+        for i, component in enumerate(self.pipeline):
+            # Validate component type
+            if not isinstance(component, (Tagger, Filter)):
+                raise ConfigurationError(
+                    f"Pipeline component {i} must be a Tagger or Filter, "
+                    f"got {type(component).__name__}"
+                )
+            
+            # If it's a tagger, add its tags to available set
+            if isinstance(component, Tagger):
+                tagger_tags = component.tag_keys
+                available_tags.update(tagger_tags)
+                logger.debug(
+                    f"Tagger {type(component).__name__} will provide tags: {tagger_tags}"
+                )
+            
+            # If it's a filter, check that required tags are available
+            elif isinstance(component, Filter):
+                required_tags = component.required_tags
+                missing_tags = set(required_tags) - available_tags
+                
+                if missing_tags:
+                    raise ConfigurationError(
+                        f"Filter {type(component).__name__} at position {i} "
+                        f"requires tags {missing_tags} but no upstream tagger "
+                        f"provides them. Available tags: {available_tags}"
+                    )
+                
+                logger.debug(
+                    f"Filter {type(component).__name__} requires tags: {required_tags}"
+                )
+        
+        logger.info(f"Pipeline validation successful: {len(self.pipeline)} components")
+    
+    @classmethod
+    def with_blur_removal(cls, threshold: float = 100.0, **kwargs) -> 'FrameProcessor':
+        """
+        Create processor with blur removal strategy.
+        
+        Convenience method for creating a processor that filters out blurry frames.
+        
+        Args:
+            threshold: Minimum blur score for frames to pass. Higher values are
+                      more restrictive. Default is 100.0.
+            **kwargs: Additional arguments passed to FrameProcessor constructor
+                     (n_workers, use_gpu, etc.)
+        
+        Returns:
+            FrameProcessor configured with BlurRemovalStrategy
+        
+        Example:
+            >>> processor = FrameProcessor.with_blur_removal(threshold=150.0)
+            >>> for frame in processor.process('video.mp4'):
+            ...     # Process only sharp frames
+            ...     process_frame(frame)
+        
+        Requirements:
+            - 7.4: Provides builder method for common configuration
+        """
+        from decimatr.strategies.blur_removal import BlurRemovalStrategy
+        
+        strategy = BlurRemovalStrategy(threshold=threshold)
+        return cls(strategy=strategy, **kwargs)
+    
+    @classmethod
+    def with_duplicate_detection(
+        cls,
+        threshold: float = 0.05,
+        window_size: int = 50,
+        **kwargs
+    ) -> 'FrameProcessor':
+        """
+        Create processor with duplicate detection strategy.
+        
+        Convenience method for creating a processor that removes duplicate or
+        near-duplicate frames.
+        
+        Args:
+            threshold: Hash similarity threshold (0.0-1.0). Lower values are
+                      stricter. Default is 0.05.
+            window_size: Number of recent frames to compare against. Default is 50.
+            **kwargs: Additional arguments passed to FrameProcessor constructor
+                     (n_workers, use_gpu, etc.)
+        
+        Returns:
+            FrameProcessor configured with DuplicateDetectionStrategy
+        
+        Example:
+            >>> processor = FrameProcessor.with_duplicate_detection(
+            ...     threshold=0.02,
+            ...     window_size=100
+            ... )
+            >>> for frame in processor.process('video.mp4'):
+            ...     # Process only unique frames
+            ...     process_frame(frame)
+        
+        Requirements:
+            - 7.4: Provides builder method for common configuration
+        """
+        from decimatr.strategies.duplicate_detection import DuplicateDetectionStrategy
+        
+        strategy = DuplicateDetectionStrategy(
+            threshold=threshold,
+            window_size=window_size
+        )
+        return cls(strategy=strategy, **kwargs)
+    
+    @classmethod
+    def with_smart_sampling(cls, **kwargs) -> 'FrameProcessor':
+        """
+        Create processor with smart sampling strategy.
+        
+        Convenience method for creating a processor that combines blur removal,
+        duplicate detection, and diversity sampling for comprehensive frame selection.
+        
+        Args:
+            **kwargs: Additional arguments passed to FrameProcessor constructor
+                     (n_workers, use_gpu, etc.) or SmartSamplingStrategy
+                     (blur_threshold, duplicate_threshold, etc.)
+        
+        Returns:
+            FrameProcessor configured with SmartSamplingStrategy
+        
+        Example:
+            >>> processor = FrameProcessor.with_smart_sampling()
+            >>> for frame in processor.process('video.mp4'):
+            ...     # Process high-quality, diverse frames
+            ...     process_frame(frame)
+            >>> 
+            >>> # With custom parameters
+            >>> processor = FrameProcessor.with_smart_sampling(
+            ...     blur_threshold=150.0,
+            ...     duplicate_threshold=0.02,
+            ...     n_workers=4
+            ... )
+        
+        Requirements:
+            - 7.4: Provides builder method for common configuration
+        """
+        from decimatr.strategies.smart_sampling import SmartSamplingStrategy
+        
+        # Separate strategy kwargs from processor kwargs
+        strategy_kwargs = {}
+        processor_kwargs = {}
+        
+        strategy_params = {
+            'blur_threshold', 'duplicate_threshold', 'duplicate_window',
+            'diversity_window', 'diversity_min_distance'
+        }
+        
+        for key, value in kwargs.items():
+            if key in strategy_params:
+                strategy_kwargs[key] = value
+            else:
+                processor_kwargs[key] = value
+        
+        strategy = SmartSamplingStrategy(**strategy_kwargs)
+        return cls(strategy=strategy, **processor_kwargs)
+    
+    def process(
+        self,
+        source: Union[str, Iterator[VideoFramePacket], List[VideoFramePacket]],
+        session_id: Optional[str] = None,
+        return_result: bool = False
+    ) -> Union[Iterator[VideoFramePacket], tuple[Iterator[VideoFramePacket], ProcessingResult]]:
+        """
+        Process video frames through the pipeline.
+        
+        This method accepts video files, frame iterators, or frame lists and
+        processes them through the configured pipeline. Frames are processed
+        in a streaming fashion - taggers compute tags sequentially, then filters
+        are applied in sequence with short-circuit evaluation (if any filter fails,
+        subsequent filters are not evaluated).
+        
+        Args:
+            source: Input source, one of:
+                   - str: Path to video file (uses load_video_frames)
+                   - Iterator[VideoFramePacket]: Frame iterator
+                   - List[VideoFramePacket]: List of frames
+            session_id: Optional session identifier for logging and metrics.
+                       If None, a session ID is generated automatically.
+            return_result: If True, returns tuple of (iterator, ProcessingResult).
+                          If False (default), returns only the iterator.
+        
+        Yields:
+            VideoFramePacket objects that passed all filters in the pipeline
+        
+        Returns:
+            If return_result=False: Iterator of VideoFramePacket
+            If return_result=True: Tuple of (Iterator, ProcessingResult)
+        
+        Example:
+            >>> # Process video file
+            >>> processor = FrameProcessor.with_blur_removal()
+            >>> for frame in processor.process('video.mp4'):
+            ...     save_frame(frame)
+            >>> 
+            >>> # Process with result summary
+            >>> frames, result = processor.process('video.mp4', return_result=True)
+            >>> for frame in frames:
+            ...     save_frame(frame)
+            >>> print(f"Selected {result.selected_frames} frames")
+            >>> 
+            >>> # Process frame iterator
+            >>> frames = load_frames_from_source()
+            >>> for frame in processor.process(frames):
+            ...     analyze_frame(frame)
+        
+        Requirements:
+            - 5.4: Allows filters to access tags from any previously executed tagger
+            - 6.1: Processes frames in streaming fashion without loading entire video
+            - 7.2: Accepts video file paths, frame iterators, or frame lists
+            - 7.3: Returns iterator of FramePackets that passed all filters
+            - 9.4: Logs processing statistics
+            - 9.5: Returns summary with performance metrics
+        """
+        # Generate session ID if not provided
+        if session_id is None:
+            import uuid
+            session_id = str(uuid.uuid4())[:8]
+        
+        logger.info(f"Starting processing session {session_id}")
+        
+        # Initialize metrics tracking
+        metrics = {
+            'session_id': session_id,
+            'total_frames': 0,
+            'processed_frames': 0,
+            'filtered_frames': 0,
+            'selected_frames': 0,
+            'errors': [],
+            'stage_metrics': {},
+            'start_time': time.time()
+        }
+        
+        # Convert source to frame iterator
+        frame_iterator = self._get_frame_iterator(source)
+        
+        # Create processing iterator with metrics tracking
+        def process_with_metrics():
+            for packet in frame_iterator:
+                metrics['total_frames'] += 1
+                metrics['processed_frames'] += 1
+                
+                # Process frame through pipeline
+                result = self._process_frame_with_metrics(packet, metrics)
+                
+                if result is not None:
+                    metrics['selected_frames'] += 1
+                    yield result
+                else:
+                    metrics['filtered_frames'] += 1
+            
+            # Log final statistics
+            processing_time = time.time() - metrics['start_time']
+            logger.info(
+                f"Session {session_id} complete: "
+                f"{metrics['total_frames']} frames processed, "
+                f"{metrics['selected_frames']} frames passed "
+                f"({metrics['selected_frames']/metrics['total_frames']*100:.1f}%), "
+                f"time={processing_time:.2f}s"
+                if metrics['total_frames'] > 0 else
+                f"Session {session_id} complete: 0 frames processed"
+            )
+        
+        iterator = process_with_metrics()
+        
+        if return_result:
+            # Create ProcessingResult that will be populated after iteration completes
+            # Note: This is a simplified approach - for full metrics, the caller must
+            # consume the entire iterator
+            result = ProcessingResult(
+                session_id=session_id,
+                total_frames=0,  # Will be updated during iteration
+                processed_frames=0,
+                filtered_frames=0,
+                selected_frames=0,
+                processing_time=0.0,
+                stage_metrics={},
+                errors=[]
+            )
+            
+            # Wrap iterator to update result after completion
+            def iterator_with_result():
+                for frame in iterator:
+                    yield frame
+                
+                # Update result after iteration completes
+                result.total_frames = metrics['total_frames']
+                result.processed_frames = metrics['processed_frames']
+                result.filtered_frames = metrics['filtered_frames']
+                result.selected_frames = metrics['selected_frames']
+                result.processing_time = time.time() - metrics['start_time']
+                result.stage_metrics = metrics['stage_metrics']
+                result.errors = metrics['errors']
+            
+            return iterator_with_result(), result
+        else:
+            return iterator
+    
+    def _get_frame_iterator(
+        self,
+        source: Union[str, Iterator[VideoFramePacket], List[VideoFramePacket]]
+    ) -> Iterator[VideoFramePacket]:
+        """
+        Convert source to frame iterator.
+        
+        Args:
+            source: Video file path, frame iterator, or frame list
+        
+        Returns:
+            Iterator yielding VideoFramePacket objects
+        
+        Raises:
+            TypeError: If source type is not supported
+            FileNotFoundError: If video file path doesn't exist
+        """
+        # If source is a string, treat it as a video file path
+        if isinstance(source, str):
+            from decimatr.video_loader import load_video_frames
+            logger.info(f"Loading frames from video file: {source}")
+            return load_video_frames(source)
+        
+        # If source is a list, convert to iterator
+        elif isinstance(source, list):
+            logger.info(f"Processing {len(source)} frames from list")
+            return iter(source)
+        
+        # If source is already an iterator, use it directly
+        elif hasattr(source, '__iter__') and hasattr(source, '__next__'):
+            logger.info("Processing frames from iterator")
+            return source
+        
+        # If source has __iter__ but not __next__, it's an iterable (convert to iterator)
+        elif hasattr(source, '__iter__'):
+            logger.info("Processing frames from iterable")
+            return iter(source)
+        
+        else:
+            raise TypeError(
+                f"source must be a video file path (str), frame iterator, or frame list. "
+                f"Got {type(source).__name__}"
+            )
+    
+    def _process_frame(self, packet: VideoFramePacket) -> Optional[VideoFramePacket]:
+        """
+        Process a single frame through the pipeline.
+        
+        Applies taggers sequentially to compute tags, then applies filters
+        sequentially with short-circuit evaluation. If any filter fails,
+        the frame is filtered out and subsequent filters are not evaluated.
+        
+        Args:
+            packet: VideoFramePacket to process
+        
+        Returns:
+            VideoFramePacket if it passes all filters, None if filtered out
+        """
+        # Apply taggers sequentially to compute tags
+        for component in self.pipeline:
+            if isinstance(component, Tagger):
+                try:
+                    tags = component.compute_tags(packet)
+                    packet.tags.update(tags)
+                    logger.debug(
+                        f"Frame {packet.frame_number}: "
+                        f"{type(component).__name__} computed tags {list(tags.keys())}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Frame {packet.frame_number}: "
+                        f"{type(component).__name__} failed: {e}"
+                    )
+                    # Continue processing - tagger failure doesn't filter the frame
+                    # but downstream filters may fail if they need the missing tags
+        
+        # Apply filters sequentially with short-circuit evaluation
+        for component in self.pipeline:
+            if isinstance(component, Filter):
+                try:
+                    if not component.should_pass(packet):
+                        logger.debug(
+                            f"Frame {packet.frame_number}: "
+                            f"filtered by {type(component).__name__}"
+                        )
+                        return None  # Frame filtered out, stop processing
+                    
+                    logger.debug(
+                        f"Frame {packet.frame_number}: "
+                        f"passed {type(component).__name__}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Frame {packet.frame_number}: "
+                        f"{type(component).__name__} error: {e}"
+                    )
+                    # Filter error means frame doesn't pass
+                    return None
+        
+        # Frame passed all filters
+        return packet
+    
+    def _process_frame_with_metrics(
+        self,
+        packet: VideoFramePacket,
+        metrics: Dict[str, Any]
+    ) -> Optional[VideoFramePacket]:
+        """
+        Process a single frame through the pipeline with metrics tracking.
+        
+        This method wraps _process_frame to add detailed metrics tracking
+        for each stage of the pipeline.
+        
+        Args:
+            packet: VideoFramePacket to process
+            metrics: Dictionary to store metrics (modified in place)
+        
+        Returns:
+            VideoFramePacket if it passes all filters, None if filtered out
+        
+        Requirements:
+            - 9.2: Logs frame-level errors and continues processing
+            - 9.3: Supports configurable logging levels
+        """
+        # Apply taggers sequentially to compute tags
+        for component in self.pipeline:
+            if isinstance(component, Tagger):
+                component_name = type(component).__name__
+                
+                try:
+                    tags = component.compute_tags(packet)
+                    packet.tags.update(tags)
+                    logger.debug(
+                        f"Frame {packet.frame_number}: "
+                        f"{component_name} computed tags {list(tags.keys())}"
+                    )
+                    
+                    # Track tagger metrics
+                    if component_name not in metrics['stage_metrics']:
+                        metrics['stage_metrics'][component_name] = {
+                            'type': 'tagger',
+                            'frames_processed': 0,
+                            'errors': 0
+                        }
+                    metrics['stage_metrics'][component_name]['frames_processed'] += 1
+                    
+                except Exception as e:
+                    error_msg = (
+                        f"Frame {packet.frame_number}: "
+                        f"{component_name} failed: {e}"
+                    )
+                    logger.error(error_msg)
+                    metrics['errors'].append(error_msg)
+                    
+                    # Track error in metrics
+                    if component_name not in metrics['stage_metrics']:
+                        metrics['stage_metrics'][component_name] = {
+                            'type': 'tagger',
+                            'frames_processed': 0,
+                            'errors': 0
+                        }
+                    metrics['stage_metrics'][component_name]['errors'] += 1
+                    
+                    # Continue processing - tagger failure doesn't filter the frame
+        
+        # Apply filters sequentially with short-circuit evaluation
+        for component in self.pipeline:
+            if isinstance(component, Filter):
+                component_name = type(component).__name__
+                
+                try:
+                    if not component.should_pass(packet):
+                        logger.debug(
+                            f"Frame {packet.frame_number}: "
+                            f"filtered by {component_name}"
+                        )
+                        
+                        # Track filter metrics
+                        if component_name not in metrics['stage_metrics']:
+                            metrics['stage_metrics'][component_name] = {
+                                'type': 'filter',
+                                'frames_evaluated': 0,
+                                'frames_passed': 0,
+                                'frames_filtered': 0,
+                                'errors': 0
+                            }
+                        metrics['stage_metrics'][component_name]['frames_evaluated'] += 1
+                        metrics['stage_metrics'][component_name]['frames_filtered'] += 1
+                        
+                        return None  # Frame filtered out, stop processing
+                    
+                    logger.debug(
+                        f"Frame {packet.frame_number}: "
+                        f"passed {component_name}"
+                    )
+                    
+                    # Track filter metrics
+                    if component_name not in metrics['stage_metrics']:
+                        metrics['stage_metrics'][component_name] = {
+                            'type': 'filter',
+                            'frames_evaluated': 0,
+                            'frames_passed': 0,
+                            'frames_filtered': 0,
+                            'errors': 0
+                        }
+                    metrics['stage_metrics'][component_name]['frames_evaluated'] += 1
+                    metrics['stage_metrics'][component_name]['frames_passed'] += 1
+                    
+                except Exception as e:
+                    error_msg = (
+                        f"Frame {packet.frame_number}: "
+                        f"{component_name} error: {e}"
+                    )
+                    logger.error(error_msg)
+                    metrics['errors'].append(error_msg)
+                    
+                    # Track error in metrics
+                    if component_name not in metrics['stage_metrics']:
+                        metrics['stage_metrics'][component_name] = {
+                            'type': 'filter',
+                            'frames_evaluated': 0,
+                            'frames_passed': 0,
+                            'frames_filtered': 0,
+                            'errors': 0
+                        }
+                    metrics['stage_metrics'][component_name]['errors'] += 1
+                    
+                    # Filter error means frame doesn't pass
+                    return None
+        
+        # Frame passed all filters
+        return packet
