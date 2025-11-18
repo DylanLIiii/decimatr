@@ -46,14 +46,14 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
 
 ## Phase 2: CPU-Based Taggers (Migrate from Gates)
 
-- [ ] 5. Implement BlurTagger (migrate from BlurGate)
+- [x] 5. Implement BlurTagger (migrate from BlurGate)
   - Create `decimatr/taggers/blur.py`
   - Migrate blur score calculation from `BlurGate._calculate_blur_score()`
   - Return `{"blur_score": float}` tag
   - Remove state, make purely functional
   - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 6. Implement HashTagger (migrate from HashGate)
+- [x] 6. Implement HashTagger (migrate from HashGate)
   - Create `decimatr/taggers/hash.py`
   - Migrate hash calculation from `HashGate._calculate_hash()`
   - Return `{"phash": str, "hash_value": ImageHash}` tags
@@ -61,25 +61,12 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
   - Support configurable hash types (phash, ahash, dhash)
   - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 7. Implement EntropyTagger (migrate from EntropyGate)
+- [x] 7. Implement EntropyTagger (migrate from EntropyGate)
   - Create `decimatr/taggers/entropy.py`
   - Migrate entropy calculation from `EntropyGate`
   - Return `{"entropy": float}` tag
   - Use Shannon entropy formula
   - _Requirements: 1.1, 1.2, 1.3_
-
-- [ ] 8. Implement additional CPU taggers
-- [ ] 8.1 Create ColorTagger
-  - Create `decimatr/taggers/color.py`
-  - Compute color histograms using OpenCV
-  - Return `{"color_hist": np.ndarray}` tag
-  - _Requirements: 1.1, 1.2_
-
-- [ ] 8.2 Create EdgeTagger
-  - Create `decimatr/taggers/edge.py`
-  - Compute edge density using Canny edge detection
-  - Return `{"edge_density": float}` tag
-  - _Requirements: 1.1, 1.2_
 
 ---
 
