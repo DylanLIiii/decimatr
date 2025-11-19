@@ -9,7 +9,7 @@ removing duplicate or near-duplicate frames from the video stream.
 from typing import List
 
 from decimatr.filters.base import StatefulFilter
-from decimatr.gates.image_hash import ImageHasher
+from decimatr.utils import ImageHasher
 from decimatr.scheme import VideoFramePacket
 
 

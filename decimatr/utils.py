@@ -1,10 +1,133 @@
 import logging
-from typing import List
-
-import cv2
+from typing import List, Union
 import numpy as np
 
+import cv2
+from PIL import Image
+
+try:
+    import imagehash
+except ImportError:
+    raise ImportError(
+        "imagehash package is required. Install it with: pip install imagehash"
+    )
+
 from decimatr.scheme import VideoFramePacket
+
+
+class ImageHasher:
+    """
+    Wrapper class for image hashing operations using the imagehash library.
+
+    This class provides a simplified interface for computing various types of
+    perceptual hashes (phash, ahash, dhash, whash, colorhash) and comparing
+    them for similarity.
+
+    Args:
+        hash_size: Size of the hash in bits (default: 8, for 8x8 = 64 bits)
+        highfreq_factor: High frequency factor for wavelet hash (default: 4)
+    """
+
+    def __init__(
+        self,
+        hash_size: int = 8,
+        highfreq_factor: int = 4
+    ):
+        """
+        Initialize the ImageHasher.
+
+        Args:
+            hash_size: Size of the hash in bits (controls hash precision)
+            highfreq_factor: High frequency factor for wavelet-based hashes
+        """
+        self.hash_size = hash_size
+        self.highfreq_factor = highfreq_factor
+
+    def compute_hash_from_array(
+        self,
+        image_array: np.ndarray,
+        hash_type: str = "phash"
+    ) -> imagehash.ImageHash:
+        """
+        Compute perceptual hash from a numpy image array.
+
+        Args:
+            image_array: numpy array representing the image (BGR or RGB format)
+            hash_type: Type of hash to compute ('phash', 'ahash', 'dhash',
+                      'whash', 'colorhash')
+
+        Returns:
+            imagehash.ImageHash object representing the computed hash
+
+        Raises:
+            ValueError: If hash_type is not supported
+        """
+        # Convert BGR to RGB if needed (OpenCV uses BGR by default)
+        if len(image_array.shape) == 3 and image_array.shape[2] == 3:
+            # Assume BGR format from OpenCV, convert to RGB
+            rgb_array = image_array[:, :, ::-1]
+        else:
+            rgb_array = image_array
+
+        # Convert numpy array to PIL Image
+        pil_image = Image.fromarray(rgb_array)
+
+        # Compute hash based on type
+        if hash_type == "phash":
+            hash_value = imagehash.phash(
+                pil_image,
+                hash_size=self.hash_size
+            )
+        elif hash_type == "ahash":
+            hash_value = imagehash.average_hash(
+                pil_image,
+                hash_size=self.hash_size
+            )
+        elif hash_type == "dhash":
+            hash_value = imagehash.dhash(
+                pil_image,
+                hash_size=self.hash_size
+            )
+        elif hash_type == "whash":
+            hash_value = imagehash.whash(
+                pil_image,
+                hash_size=self.hash_size,
+                mode='haar'
+            )
+        elif hash_type == "colorhash":
+            hash_value = imagehash.colorhash(
+                pil_image,
+                binbits=self.hash_size
+            )
+        else:
+            raise ValueError(
+                f"Unsupported hash_type: {hash_type}. "
+                f"Supported types: 'phash', 'ahash', 'dhash', 'whash', 'colorhash'"
+            )
+
+        return hash_value
+
+    def hash_difference(
+        self,
+        hash1: imagehash.ImageHash,
+        hash2: imagehash.ImageHash
+    ) -> int:
+        """
+        Calculate the difference between two image hashes.
+
+        The difference is computed as the number of bits that differ between
+        the two hashes (Hamming distance).
+
+        Args:
+            hash1: First imagehash.ImageHash object
+            hash2: Second imagehash.ImageHash object
+
+        Returns:
+            Integer representing the number of differing bits (Hamming distance)
+        """
+        # imagehash library provides __sub__ operator to calculate difference
+        diff = hash1 - hash2
+        return int(diff)
 
 # def rgb_image_to_pil_image(
 #     pil_image: Image.Image, metadata: Dict[str, Any]

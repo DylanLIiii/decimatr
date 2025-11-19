@@ -9,7 +9,7 @@ computes hash values without performing duplicate detection logic.
 
 from typing import Any, Dict, List
 
-from decimatr.gates.image_hash import ImageHasher
+from decimatr.utils import ImageHasher
 from decimatr.scheme import VideoFramePacket
 from decimatr.taggers.base import Tagger
 
