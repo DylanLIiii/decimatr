@@ -545,6 +545,63 @@ class FrameProcessor:
         strategy = SmartSamplingStrategy(**strategy_kwargs)
         return cls(strategy=strategy, **processor_kwargs)
 
+    @staticmethod
+    def check_gpu_available() -> bool:
+        """
+        Check if GPU acceleration is available.
+
+        This method checks for the presence of required GPU dependencies
+        (torch, torchvision) and verifies that CUDA is available.
+
+        Returns:
+            True if GPU acceleration is available, False otherwise
+
+        Example:
+            >>> if FrameProcessor.check_gpu_available():
+            ...     processor = FrameProcessor(use_gpu=True)
+            ... else:
+            ...     print("GPU not available, using CPU")
+            ...     processor = FrameProcessor(use_gpu=False)
+
+        Requirements:
+            - 11.5: Provides method to check GPU availability
+        """
+        from decimatr.gpu_utils import GPUCapabilities
+
+        return GPUCapabilities.is_available()
+
+    @staticmethod
+    def get_gpu_info() -> dict[str, Any]:
+        """
+        Get detailed GPU information.
+
+        Returns a dictionary containing GPU availability status and, if
+        available, detailed information about the GPU hardware and CUDA version.
+
+        Returns:
+            Dictionary with GPU information including:
+            - gpu_available: bool indicating if GPU is available
+            - missing_dependencies: list of missing dependencies
+            - cuda_version: CUDA version string (if available)
+            - device_count: number of GPU devices (if available)
+            - device_name: name of the first GPU device (if available)
+
+        Example:
+            >>> info = FrameProcessor.get_gpu_info()
+            >>> print(f"GPU Available: {info['gpu_available']}")
+            >>> if info['gpu_available']:
+            ...     print(f"Device: {info['device_name']}")
+            ...     print(f"CUDA Version: {info['cuda_version']}")
+            ... else:
+            ...     print(f"Missing: {', '.join(info['missing_dependencies'])}")
+
+        Requirements:
+            - 11.5: Reports which GPU dependencies are installed
+        """
+        from decimatr.gpu_utils import GPUCapabilities
+
+        return GPUCapabilities.get_info()
+
     def process(
         self,
         source: str | Iterator[VideoFramePacket] | list[VideoFramePacket],
@@ -873,6 +930,7 @@ class FrameProcessor:
                 pipeline=self.pipeline,
                 n_workers=self.n_workers,
                 use_gpu=self.use_gpu,
+                gpu_batch_size=self.gpu_batch_size,
                 address=address,
             )
             logger.info(f"Created ActorPipeline with {self.n_workers} workers at {address}")
