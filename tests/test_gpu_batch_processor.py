@@ -17,6 +17,9 @@ from decimatr.actors.gpu_actor import GPUBatchProcessor
 from decimatr.scheme import VideoFramePacket
 from decimatr.taggers.base import Tagger
 
+# Configure pytest-asyncio
+pytestmark = pytest.mark.asyncio
+
 
 class MockGPUTagger(Tagger):
     """Mock tagger for testing GPU batch processing."""
@@ -59,7 +62,6 @@ def create_test_packet(frame_number: int) -> VideoFramePacket:
     )
 
 
-@pytest.mark.asyncio
 async def test_gpu_batch_processor_initialization():
     """Test GPUBatchProcessor initialization."""
     tagger = MockGPUTagger()
@@ -74,7 +76,6 @@ async def test_gpu_batch_processor_initialization():
     assert processor.using_cpu is False
 
 
-@pytest.mark.asyncio
 async def test_gpu_batch_processor_invalid_params():
     """Test GPUBatchProcessor with invalid parameters."""
     tagger = MockGPUTagger()
@@ -88,7 +89,6 @@ async def test_gpu_batch_processor_invalid_params():
         GPUBatchProcessor(tagger, batch_size=0)
 
 
-@pytest.mark.asyncio
 async def test_gpu_batch_accumulation():
     """Test frame accumulation in batch."""
     # Create actor pool
@@ -120,7 +120,6 @@ async def test_gpu_batch_accumulation():
         assert packet.tags["mock_tag"].startswith("gpu_")
 
 
-@pytest.mark.asyncio
 async def test_gpu_batch_flush():
     """Test flushing remaining frames."""
     await xo.create_actor_pool(address="127.0.0.1:13528", n_process=1)
@@ -146,7 +145,6 @@ async def test_gpu_batch_flush():
         assert "mock_tag" in packet.tags
 
 
-@pytest.mark.asyncio
 async def test_gpu_failure_fallback():
     """Test CPU fallback on GPU failure."""
     await xo.create_actor_pool(address="127.0.0.1:13529", n_process=1)
@@ -183,7 +181,6 @@ async def test_gpu_failure_fallback():
     assert failures == 1
 
 
-@pytest.mark.asyncio
 async def test_gpu_failure_threshold():
     """Test switching to CPU after failure threshold."""
     await xo.create_actor_pool(address="127.0.0.1:13530", n_process=1)
@@ -220,7 +217,6 @@ async def test_gpu_failure_threshold():
     assert len(result) == 2
 
 
-@pytest.mark.asyncio
 async def test_gpu_batch_stats():
     """Test getting batch processor statistics."""
     await xo.create_actor_pool(address="127.0.0.1:13531", n_process=1)
