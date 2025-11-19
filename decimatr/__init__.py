@@ -11,54 +11,54 @@ Quick Start:
     ...     process_frame(frame)
 
 For more information, see the documentation at:
-https://github.com/yourusername/decimatr
+https://github.com/DylanLIiii/decimatr
 """
 
 __version__ = "0.1.0"
-__author__ = "Your Name"
+__author__ = "Dylan Li"
 __license__ = "MIT"
 
 # Core API
 from .core.processor import FrameProcessor, ProcessingResult
-from .scheme import VideoFramePacket
-from .video_loader import load_video_frames
 
-# Base classes for custom components
-from .taggers.base import Tagger
-from .filters.base import Filter, StatelessFilter, StatefulFilter
-from .strategies.base import FilterStrategy
+# Utilities
+from .core.temporal_buffer import TemporalBuffer
 
-# Common taggers
-from .taggers.blur import BlurTagger
-from .taggers.hash import HashTagger
-from .taggers.entropy import EntropyTagger
+# Exceptions
+from .exceptions import (
+    ActorError,
+    ConfigurationError,
+    DecimatrError,
+    GPUDependencyError,
+    ProcessingError,
+    TagMissingError,
+)
+from .filters.base import Filter, StatefulFilter, StatelessFilter
 
 # Common filters
 from .filters.blur import BlurFilter
-from .filters.entropy import EntropyFilter
-from .filters.threshold import ThresholdFilter
-from .filters.duplicate import DuplicateFilter
-from .filters.motion import MotionFilter
 from .filters.diversity import DiversityFilter
+from .filters.duplicate import DuplicateFilter
+from .filters.entropy import EntropyFilter
+from .filters.motion import MotionFilter
+from .filters.threshold import ThresholdFilter
+from .gpu_utils import GPUCapabilities
+from .scheme import VideoFramePacket
+from .strategies.base import FilterStrategy
 
 # Predefined strategies
 from .strategies.blur_removal import BlurRemovalStrategy
 from .strategies.duplicate_detection import DuplicateDetectionStrategy
 from .strategies.smart_sampling import SmartSamplingStrategy
 
-# Utilities
-from .core.temporal_buffer import TemporalBuffer
-from .gpu_utils import GPUCapabilities
+# Base classes for custom components
+from .taggers.base import Tagger
 
-# Exceptions
-from .exceptions import (
-    DecimatrError,
-    ConfigurationError,
-    TagMissingError,
-    ProcessingError,
-    ActorError,
-    GPUDependencyError
-)
+# Common taggers
+from .taggers.blur import BlurTagger
+from .taggers.entropy import EntropyTagger
+from .taggers.hash import HashTagger
+from .video_loader import load_video_frames
 
 __all__ = [
     # Core API
@@ -66,19 +66,16 @@ __all__ = [
     "ProcessingResult",
     "VideoFramePacket",
     "load_video_frames",
-    
     # Base classes
     "Tagger",
     "Filter",
     "StatelessFilter",
     "StatefulFilter",
     "FilterStrategy",
-    
     # Taggers
     "BlurTagger",
     "HashTagger",
     "EntropyTagger",
-    
     # Filters
     "BlurFilter",
     "EntropyFilter",
@@ -86,16 +83,13 @@ __all__ = [
     "DuplicateFilter",
     "MotionFilter",
     "DiversityFilter",
-    
     # Strategies
     "BlurRemovalStrategy",
     "DuplicateDetectionStrategy",
     "SmartSamplingStrategy",
-    
     # Utilities
     "TemporalBuffer",
     "GPUCapabilities",
-    
     # Exceptions
     "DecimatrError",
     "ConfigurationError",

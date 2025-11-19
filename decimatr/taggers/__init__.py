@@ -13,6 +13,7 @@ from decimatr.taggers.hash import HashTagger
 # Import it only if dependencies are available
 try:
     from decimatr.taggers.clip import CLIPTagger
+
     __all__ = ["Tagger", "BlurTagger", "EntropyTagger", "HashTagger", "CLIPTagger"]
 except ImportError:
     # GPU dependencies not available, CLIPTagger not exported

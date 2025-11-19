@@ -2,7 +2,6 @@ import datetime
 
 import numpy as np
 import pytest
-
 from decimatr.scheme import VideoFramePacket
 
 
@@ -102,14 +101,10 @@ def create_checkerboard_frame():
 
                 # Alternate white squares
                 if i + square_size <= size[0] and j + square_size * 2 <= size[1]:
-                    checkerboard[
-                        i : i + square_size, j + square_size : j + square_size * 2
-                    ] = 255
+                    checkerboard[i : i + square_size, j + square_size : j + square_size * 2] = 255
 
                 if i + square_size * 2 <= size[0] and j + square_size <= size[1]:
-                    checkerboard[
-                        i + square_size : i + square_size * 2, j : j + square_size
-                    ] = 255
+                    checkerboard[i + square_size : i + square_size * 2, j : j + square_size] = 255
 
         return checkerboard
 
@@ -122,9 +117,7 @@ def create_frame_sequence():
     Factory fixture to create a sequence of VideoFramePacket objects.
     """
 
-    def _create_sequence(
-        num_frames=10, frame_generator=None, source_video_id="test_video"
-    ):
+    def _create_sequence(num_frames=10, frame_generator=None, source_video_id="test_video"):
         packets = []
 
         for i in range(num_frames):
@@ -212,9 +205,11 @@ def very_different_colored_frames():
     # Green frame with a white horizontal line
     green_frame = np.zeros((frame_size[0], frame_size[1], 3), dtype=np.uint8)
     green_frame[:, :, 1] = 255  # All green
-    green_frame[
-        frame_size[0] // 2 - 1 : frame_size[0] // 2 + 1, 5 : frame_size[1] - 5
-    ] = [255, 255, 255]  # White horizontal line
+    green_frame[frame_size[0] // 2 - 1 : frame_size[0] // 2 + 1, 5 : frame_size[1] - 5] = [
+        255,
+        255,
+        255,
+    ]  # White horizontal line
 
     # Blue frame with a yellow cross
     blue_frame = np.zeros((frame_size[0], frame_size[1], 3), dtype=np.uint8)
@@ -223,9 +218,7 @@ def very_different_colored_frames():
     yellow = [255, 255, 0]
     center_x, center_y = frame_size[1] // 2, frame_size[0] // 2
     # Draw a small 'X'
-    blue_frame[center_y - 2 : center_y + 2, center_x - 2 : center_x + 2] = (
-        yellow  # Center dot
-    )
+    blue_frame[center_y - 2 : center_y + 2, center_x - 2 : center_x + 2] = yellow  # Center dot
     blue_frame[center_y - 3 : center_y - 1, center_x - 1 : center_x + 1] = yellow
     blue_frame[center_y + 1 : center_y + 3, center_x - 1 : center_x + 1] = yellow
     blue_frame[center_y - 1 : center_y + 1, center_x - 3 : center_x - 1] = yellow

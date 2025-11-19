@@ -5,13 +5,13 @@ Filters determine whether frames should pass through the processing pipeline
 based on their tags and temporal context.
 """
 
-from decimatr.filters.base import Filter, StatelessFilter, StatefulFilter
-from decimatr.filters.threshold import ThresholdFilter
+from decimatr.filters.base import Filter, StatefulFilter, StatelessFilter
 from decimatr.filters.blur import BlurFilter
-from decimatr.filters.entropy import EntropyFilter
-from decimatr.filters.duplicate import DuplicateFilter
-from decimatr.filters.motion import MotionFilter
 from decimatr.filters.diversity import DiversityFilter
+from decimatr.filters.duplicate import DuplicateFilter
+from decimatr.filters.entropy import EntropyFilter
+from decimatr.filters.motion import MotionFilter
+from decimatr.filters.threshold import ThresholdFilter
 
 __all__ = [
     "Filter",

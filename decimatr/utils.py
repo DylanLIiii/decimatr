@@ -1,16 +1,13 @@
 import logging
-from typing import List, Union
-import numpy as np
 
 import cv2
+import numpy as np
 from PIL import Image
 
 try:
     import imagehash
 except ImportError:
-    raise ImportError(
-        "imagehash package is required. Install it with: pip install imagehash"
-    )
+    raise ImportError("imagehash package is required. Install it with: pip install imagehash")
 
 from decimatr.scheme import VideoFramePacket
 
@@ -28,11 +25,7 @@ class ImageHasher:
         highfreq_factor: High frequency factor for wavelet hash (default: 4)
     """
 
-    def __init__(
-        self,
-        hash_size: int = 8,
-        highfreq_factor: int = 4
-    ):
+    def __init__(self, hash_size: int = 8, highfreq_factor: int = 4):
         """
         Initialize the ImageHasher.
 
@@ -44,9 +37,7 @@ class ImageHasher:
         self.highfreq_factor = highfreq_factor
 
     def compute_hash_from_array(
-        self,
-        image_array: np.ndarray,
-        hash_type: str = "phash"
+        self, image_array: np.ndarray, hash_type: str = "phash"
     ) -> imagehash.ImageHash:
         """
         Compute perceptual hash from a numpy image array.
@@ -74,31 +65,15 @@ class ImageHasher:
 
         # Compute hash based on type
         if hash_type == "phash":
-            hash_value = imagehash.phash(
-                pil_image,
-                hash_size=self.hash_size
-            )
+            hash_value = imagehash.phash(pil_image, hash_size=self.hash_size)
         elif hash_type == "ahash":
-            hash_value = imagehash.average_hash(
-                pil_image,
-                hash_size=self.hash_size
-            )
+            hash_value = imagehash.average_hash(pil_image, hash_size=self.hash_size)
         elif hash_type == "dhash":
-            hash_value = imagehash.dhash(
-                pil_image,
-                hash_size=self.hash_size
-            )
+            hash_value = imagehash.dhash(pil_image, hash_size=self.hash_size)
         elif hash_type == "whash":
-            hash_value = imagehash.whash(
-                pil_image,
-                hash_size=self.hash_size,
-                mode='haar'
-            )
+            hash_value = imagehash.whash(pil_image, hash_size=self.hash_size, mode="haar")
         elif hash_type == "colorhash":
-            hash_value = imagehash.colorhash(
-                pil_image,
-                binbits=self.hash_size
-            )
+            hash_value = imagehash.colorhash(pil_image, binbits=self.hash_size)
         else:
             raise ValueError(
                 f"Unsupported hash_type: {hash_type}. "
@@ -107,11 +82,7 @@ class ImageHasher:
 
         return hash_value
 
-    def hash_difference(
-        self,
-        hash1: imagehash.ImageHash,
-        hash2: imagehash.ImageHash
-    ) -> int:
+    def hash_difference(self, hash1: imagehash.ImageHash, hash2: imagehash.ImageHash) -> int:
         """
         Calculate the difference between two image hashes.
 
@@ -128,6 +99,7 @@ class ImageHasher:
         # imagehash library provides __sub__ operator to calculate difference
         diff = hash1 - hash2
         return int(diff)
+
 
 # def rgb_image_to_pil_image(
 #     pil_image: Image.Image, metadata: Dict[str, Any]
@@ -192,13 +164,11 @@ def extract_frames(video_path: str, logger: logging.Logger):
         frame_index += 1
 
     cap.release()
-    logger.info(
-        f"Finished extracting frames from {video_path}. Total frames: {frame_index}"
-    )
+    logger.info(f"Finished extracting frames from {video_path}. Total frames: {frame_index}")
 
 
 def write_packets_to_video(
-    frame_packets: List[VideoFramePacket],
+    frame_packets: list[VideoFramePacket],
     output_path: str,
     logger: logging.Logger,
     fps: int = 30,
@@ -241,9 +211,7 @@ def write_packets_to_video(
             f"Frame data in the first packet has unexpected shape: {first_frame_data.shape}. "
             f"Expected (H, W, 3) for output: {output_path}."
         )
-        raise ValueError(
-            "Frame data must be in HWC format with 3 channels (e.g., RGB)."
-        )
+        raise ValueError("Frame data must be in HWC format with 3 channels (e.g., RGB).")
 
     # Assuming frame_data is np.uint8. If not, conversion might be needed: e.g., .astype(np.uint8)
     if first_frame_data.dtype != np.uint8:
@@ -260,24 +228,18 @@ def write_packets_to_video(
         # Common codecs: 'mp4v' for .mp4, 'XVID' for .avi
         # Adjust output_path extension or codec if needed.
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        video_writer = cv2.VideoWriter(
-            output_path, fourcc, float(fps), (frame_width, frame_height)
-        )
+        video_writer = cv2.VideoWriter(output_path, fourcc, float(fps), (frame_width, frame_height))
         logger.info(
             f"Initialized VideoWriter for {output_path} with {frame_width}x{frame_height} @ {fps}fps using {fourcc=}."
         )
     except Exception as e:
-        logger.error(
-            f"Failed to initialize VideoWriter for {output_path}: {e}", exc_info=True
-        )
+        logger.error(f"Failed to initialize VideoWriter for {output_path}: {e}", exc_info=True)
         raise RuntimeError(f"Failed to initialize VideoWriter for {output_path}") from e
 
     frames_written_count = 0
     try:
         for i, packet in enumerate(frame_packets):
-            if not hasattr(packet, "frame_data") or not isinstance(
-                packet.frame_data, np.ndarray
-            ):
+            if not hasattr(packet, "frame_data") or not isinstance(packet.frame_data, np.ndarray):
                 logger.warning(
                     f"Skipping packet index {i} (frame_number {getattr(packet, 'frame_number', 'N/A')}) for {output_path}: "
                     f"frame_data is missing or not a NumPy array."
@@ -336,6 +298,4 @@ def write_packets_to_video(
             video_writer.release()
             logger.info(f"VideoWriter for {output_path} released.")
         elif "video_writer" in locals():
-            logger.warning(
-                f"VideoWriter for {output_path} was not opened or already closed."
-            )
+            logger.warning(f"VideoWriter for {output_path} was not opened or already closed.")
