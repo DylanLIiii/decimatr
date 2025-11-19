@@ -40,6 +40,7 @@ dependencies = [
     "xoscar>=0.3.0",
     "decord>=0.6.0",
     "imagehash>=4.3.2",
+    "pre-commit>=4.4.0",
 ]
 
 [project.optional-dependencies]
