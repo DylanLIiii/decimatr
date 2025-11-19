@@ -1,5 +1,12 @@
 # Decimatr: High-Performance Video Frame Processing Library
 
+[![Tests](https://github.com/DylanLIiii/decimatr/actions/workflows/test.yml/badge.svg)](https://github.com/DylanLIiii/decimatr/actions/workflows/test.yml)
+[![Code Quality](https://github.com/DylanLIiii/decimatr/actions/workflows/quality.yml/badge.svg)](https://github.com/DylanLIiii/decimatr/actions/workflows/quality.yml)
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI version](https://badge.fury.io/py/decimatr.svg)](https://badge.fury.io/py/decimatr)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 Decimatr is a modern, actor-based video frame processing library that provides a clean separation between frame analysis (tagging) and decision-making (filtering). Built on the xoscar Actor Model, it enables efficient distributed processing across CPU cores with optional GPU acceleration.
 
 ## Features
@@ -490,13 +497,13 @@ Decimatr uses a three-layer architecture:
 
 ## Requirements
 
-- Python 3.8+
-- NumPy >= 1.24.0
-- OpenCV >= 4.8.0
-- Pillow >= 10.0.0
-- imagehash >= 4.3.1
+- Python 3.10+
+- NumPy >= 2.2.5
+- OpenCV >= 4.11.0
+- imagehash >= 4.3.2
 - xoscar >= 0.3.0
 - decord >= 0.6.0
+- loguru >= 0.7.3
 
 **Optional (GPU):**
 - torch >= 2.0.0
@@ -504,22 +511,13 @@ Decimatr uses a three-layer architecture:
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Please open an issue or pull request on GitHub.
 
 ## License
 
-[Add your license here]
-
-## Citation
-
-If you use Decimatr in your research, please cite:
-
-```bibtex
-[Add citation here]
-```
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/decimatr/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/decimatr/discussions)
-- **Documentation**: [Full Documentation](https://decimatr.readthedocs.io)
+- **Issues**: [GitHub Issues](https://github.com/DylanLIiii/decimatr/issues)
+- **Documentation**: [GitHub Repository](https://github.com/DylanLIiii/decimatr)

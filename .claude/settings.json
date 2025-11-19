@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /home/heng.li/repo/decimatr && ruff format decimatr/ tests/ examples/ 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "cd /home/heng.li/repo/decimatr && ruff check --fix decimatr/ tests/ examples/ 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}
