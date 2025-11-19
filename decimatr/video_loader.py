@@ -33,7 +33,7 @@ def load_video_frames(
         # For now, let decord decide or use default (often CPU)
         vr = decord.VideoReader(video_path)
     except RuntimeError as e:
-        raise RuntimeError(f"Failed to open video '{video_path}' with decord: {e}")
+        raise RuntimeError(f"Failed to open video '{video_path}' with decord: {e}") from e
 
     if source_video_id is None:
         source_video_id = os.path.basename(video_path)

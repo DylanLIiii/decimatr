@@ -110,7 +110,7 @@ class DiversityFilter(StatefulFilter):
                 return None  # Missing required tag
 
             # Handle different value types
-            if isinstance(value, (int, float)):
+            if isinstance(value, int | float):
                 features.append(float(value))
             elif isinstance(value, np.ndarray):
                 # Flatten arrays (e.g., histograms, embeddings)
@@ -181,7 +181,7 @@ class DiversityFilter(StatefulFilter):
         # Auto-detect numeric tags from current packet
         numeric_tags = []
         for key, value in packet.tags.items():
-            if isinstance(value, (int, float, np.ndarray)):
+            if isinstance(value, int | float | np.ndarray):
                 numeric_tags.append(key)
 
         return numeric_tags

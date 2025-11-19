@@ -125,9 +125,6 @@ class TestMemoryRelease:
         # Create blurry frames that will be filtered
         frames = [create_test_frame(i, blur_score=50.0) for i in range(3)]
 
-        # Store original frame data sizes
-        original_sizes = [frame.frame_data.nbytes for frame in frames]
-
         # Process frames (all should be filtered)
         results = list(processor.process(frames))
 

@@ -7,7 +7,9 @@ from PIL import Image
 try:
     import imagehash
 except ImportError:
-    raise ImportError("imagehash package is required. Install it with: pip install imagehash")
+    raise ImportError(
+        "imagehash package is required. Install it with: pip install imagehash"
+    ) from None
 
 from decimatr.scheme import VideoFramePacket
 

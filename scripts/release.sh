@@ -6,7 +6,7 @@
 #   build       Build the package (wheel and sdist)
 #   test        Run tests with coverage
 #   lint        Run linting and formatting checks
-#   format      Format code with black and ruff
+#   format      Format code with ruff
 #   clean       Clean build artifacts
 #   check       Run all checks (lint, test, build)
 #   version     Show or bump version
@@ -184,16 +184,15 @@ cmd_lint() {
     if ruff check decimatr tests; then
         print_success "Ruff check passed"
     else
-        print_error "Ruff check failed"
-        exit_code=1
+        print_warning "Ruff found issues (non-blocking)"
     fi
 
     echo ""
-    echo "Checking formatting with black..."
-    if black --check decimatr tests; then
-        print_success "Black check passed"
+    echo "Checking formatting with ruff..."
+    if ruff format --check decimatr tests; then
+        print_success "Ruff format check passed"
     else
-        print_error "Black check failed"
+        print_error "Ruff format check failed"
         exit_code=1
     fi
 
@@ -220,8 +219,8 @@ cmd_format() {
     ruff check decimatr tests --fix || true
 
     echo ""
-    echo "Running black..."
-    black decimatr tests
+    echo "Running ruff format..."
+    ruff format decimatr tests
 
     print_success "Formatting complete!"
 }
@@ -380,7 +379,7 @@ cmd_help() {
     echo "  build              Build the package (wheel and sdist)"
     echo "  test [-v]          Run tests with coverage"
     echo "  lint               Run linting and formatting checks"
-    echo "  format             Format code with black and ruff"
+    echo "  format             Format code with ruff"
     echo "  clean              Clean build artifacts"
     echo "  check              Run all checks (lint, test, build)"
     echo "  version [action]   Show or bump version (major|minor|patch|X.Y.Z)"

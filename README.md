@@ -5,7 +5,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyPI version](https://badge.fury.io/py/decimatr.svg)](https://badge.fury.io/py/decimatr)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 Decimatr is a modern, actor-based video frame processing library that provides a clean separation between frame analysis (tagging) and decision-making (filtering). Built on the xoscar Actor Model, it enables efficient distributed processing across CPU cores with optional GPU acceleration.
 

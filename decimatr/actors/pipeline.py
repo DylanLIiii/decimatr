@@ -90,7 +90,7 @@ class ActorPipeline:
 
         # Validate pipeline components
         for i, component in enumerate(pipeline):
-            if not isinstance(component, (Tagger, Filter)):
+            if not isinstance(component, Tagger | Filter):
                 raise TypeError(
                     f"Pipeline component at index {i} must be a Tagger or Filter, "
                     f"got {type(component)}"
@@ -145,8 +145,7 @@ class ActorPipeline:
                 if isinstance(component, Tagger):
                     # Create actor pool for taggers (parallel execution)
                     logger.debug(
-                        f"Creating TaggerActor pool for stage {i}: "
-                        f"{component.__class__.__name__}"
+                        f"Creating TaggerActor pool for stage {i}: {component.__class__.__name__}"
                     )
                     actor_ref = await xo.create_actor(
                         TaggerActor, component, address=self.address, uid=f"tagger_{i}"
@@ -170,8 +169,7 @@ class ActorPipeline:
                 elif isinstance(component, StatelessFilter):
                     # Actor pool for stateless filters (parallel execution)
                     logger.debug(
-                        f"Creating FilterActor pool for stage {i}: "
-                        f"{component.__class__.__name__}"
+                        f"Creating FilterActor pool for stage {i}: {component.__class__.__name__}"
                     )
                     actor_ref = await xo.create_actor(
                         FilterActor, component, address=self.address, uid=f"filter_{i}"
@@ -183,7 +181,7 @@ class ActorPipeline:
 
             self._initialized = True
             logger.info(
-                f"ActorPipeline initialized successfully with " f"{len(self.actor_pools)} stages"
+                f"ActorPipeline initialized successfully with {len(self.actor_pools)} stages"
             )
 
         except Exception as e:

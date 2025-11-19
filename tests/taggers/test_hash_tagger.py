@@ -182,7 +182,7 @@ class TestHashTagger:
 
         # Hash values should be comparable (difference should be a number)
         hash_diff = tags1["hash_value"] - tags2["hash_value"]
-        assert isinstance(hash_diff, (int, float, np.integer))
+        assert isinstance(hash_diff, int | float | np.integer)
 
         # Slightly different frames should have small hash difference
         assert hash_diff < 20  # Reasonable threshold for slightly different frames

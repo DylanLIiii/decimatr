@@ -105,12 +105,10 @@ class CLIPTagger(Tagger):
         if self._model is None:
             try:
                 import clip
-                import torch
             except ImportError as e:
                 raise GPUDependencyError(
-                    f"CLIP dependencies not available: {e}. "
-                    f"Install with: pip install decimatr[gpu]"
-                )
+                    f"CLIP dependencies not available: {e}. Install with: pip install decimatr[gpu]"
+                ) from e
 
             self._model, self._preprocess = clip.load(self.model_name, device=self.device)
             self._model.eval()  # Set to evaluation mode
@@ -139,9 +137,8 @@ class CLIPTagger(Tagger):
             from PIL import Image
         except ImportError as e:
             raise GPUDependencyError(
-                f"Required dependencies not available: {e}. "
-                f"Install with: pip install decimatr[gpu]"
-            )
+                f"Required dependencies not available: {e}. Install with: pip install decimatr[gpu]"
+            ) from e
 
         # Convert frame to PIL Image (CLIP expects RGB)
         # frame_data is already in RGB format from decord
@@ -189,9 +186,8 @@ class CLIPTagger(Tagger):
             from PIL import Image
         except ImportError as e:
             raise GPUDependencyError(
-                f"Required dependencies not available: {e}. "
-                f"Install with: pip install decimatr[gpu]"
-            )
+                f"Required dependencies not available: {e}. Install with: pip install decimatr[gpu]"
+            ) from e
 
         # Convert all frames to PIL Images
         images = [Image.fromarray(frame) for frame in frames]

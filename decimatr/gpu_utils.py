@@ -75,7 +75,7 @@ class GPUCapabilities:
 
         # Check for torchvision
         try:
-            import torchvision
+            import torchvision  # noqa: F401
         except ImportError:
             cls._missing_dependencies.append("torchvision")
 

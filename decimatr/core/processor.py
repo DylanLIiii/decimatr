@@ -140,9 +140,9 @@ class ProcessingResult:
 
     def print_summary(self) -> None:
         """Print a detailed summary of processing results to stdout."""
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Processing Session: {self.session_id}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(
             f"Frames: {self.selected_frames}/{self.total_frames} selected "
             f"({self.get_selection_rate():.1f}%)"
@@ -195,7 +195,7 @@ class ProcessingResult:
             if len(self.errors) > 5:
                 print(f"  ... and {len(self.errors) - 5} more")
 
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
 
 class FrameProcessor:
@@ -352,7 +352,7 @@ class FrameProcessor:
 
         for i, component in enumerate(self.pipeline):
             # Validate component type
-            if not isinstance(component, (Tagger, Filter)):
+            if not isinstance(component, Tagger | Filter):
                 raise ConfigurationError(
                     f"Pipeline component {i} must be a Tagger or Filter, "
                     f"got {type(component).__name__}"
@@ -680,7 +680,7 @@ class FrameProcessor:
                 f"Session {session_id} complete: "
                 f"{metrics['total_frames']} frames processed, "
                 f"{metrics['selected_frames']} frames passed "
-                f"({metrics['selected_frames']/metrics['total_frames']*100:.1f}%), "
+                f"({metrics['selected_frames'] / metrics['total_frames'] * 100:.1f}%), "
                 f"time={processing_time:.2f}s"
                 if metrics["total_frames"] > 0
                 else f"Session {session_id} complete: 0 frames processed"
@@ -706,8 +706,7 @@ class FrameProcessor:
 
             # Wrap iterator to update result after completion
             def iterator_with_result():
-                for frame in iterator:
-                    yield frame
+                yield from iterator
 
                 # Update result after iteration completes
                 result.total_frames = metrics["total_frames"]
@@ -749,8 +748,7 @@ class FrameProcessor:
             session_id = str(uuid.uuid4())[:8]
 
         logger.info(
-            f"Starting actor-based processing session {session_id} "
-            f"with {self.n_workers} workers"
+            f"Starting actor-based processing session {session_id} with {self.n_workers} workers"
         )
 
         # Initialize metrics tracking
@@ -805,7 +803,7 @@ class FrameProcessor:
                     f"Session {session_id} complete: "
                     f"{metrics['total_frames']} frames processed, "
                     f"{metrics['selected_frames']} frames passed "
-                    f"({metrics['selected_frames']/metrics['total_frames']*100:.1f}%), "
+                    f"({metrics['selected_frames'] / metrics['total_frames'] * 100:.1f}%), "
                     f"time={processing_time:.2f}s"
                     if metrics["total_frames"] > 0
                     else f"Session {session_id} complete: 0 frames processed"
@@ -836,8 +834,7 @@ class FrameProcessor:
 
             # Wrap iterator to update result after completion
             def iterator_with_result():
-                for frame in iterator:
-                    yield frame
+                yield from iterator
 
                 # Update result after iteration completes
                 result.total_frames = metrics["total_frames"]
@@ -977,7 +974,7 @@ class FrameProcessor:
                     )
                 except Exception as e:
                     logger.error(
-                        f"Frame {packet.frame_number}: " f"{type(component).__name__} failed: {e}"
+                        f"Frame {packet.frame_number}: {type(component).__name__} failed: {e}"
                     )
                     # Continue processing - tagger failure doesn't filter the frame
                     # but downstream filters may fail if they need the missing tags
@@ -988,20 +985,17 @@ class FrameProcessor:
                 try:
                     if not component.should_pass(packet):
                         logger.debug(
-                            f"Frame {packet.frame_number}: "
-                            f"filtered by {type(component).__name__}"
+                            f"Frame {packet.frame_number}: filtered by {type(component).__name__}"
                         )
                         # Release frame data if memory release is enabled
                         if self.release_memory:
                             packet.frame_data = np.zeros((1, 1, 3), dtype=np.uint8)
                         return None  # Frame filtered out, stop processing
 
-                    logger.debug(
-                        f"Frame {packet.frame_number}: " f"passed {type(component).__name__}"
-                    )
+                    logger.debug(f"Frame {packet.frame_number}: passed {type(component).__name__}")
                 except Exception as e:
                     logger.error(
-                        f"Frame {packet.frame_number}: " f"{type(component).__name__} error: {e}"
+                        f"Frame {packet.frame_number}: {type(component).__name__} error: {e}"
                     )
                     # Release frame data if memory release is enabled
                     if self.release_memory:
@@ -1060,20 +1054,17 @@ class FrameProcessor:
                 try:
                     if not component.should_pass(packet):
                         logger.debug(
-                            f"Frame {packet.frame_number}: "
-                            f"filtered by {type(component).__name__}"
+                            f"Frame {packet.frame_number}: filtered by {type(component).__name__}"
                         )
                         # Release frame data if memory release is enabled
                         if self.release_memory:
                             packet.frame_data = np.zeros((1, 1, 3), dtype=np.uint8)
                         return None  # Frame filtered out, stop processing
 
-                    logger.debug(
-                        f"Frame {packet.frame_number}: " f"passed {type(component).__name__}"
-                    )
+                    logger.debug(f"Frame {packet.frame_number}: passed {type(component).__name__}")
                 except Exception as e:
                     logger.error(
-                        f"Frame {packet.frame_number}: " f"{type(component).__name__} error: {e}"
+                        f"Frame {packet.frame_number}: {type(component).__name__} error: {e}"
                     )
                     # Release frame data if memory release is enabled
                     if self.release_memory:
@@ -1138,7 +1129,7 @@ class FrameProcessor:
                     metrics["stage_metrics"][component_name]["frames_processed"] += 1
 
                 except Exception as e:
-                    error_msg = f"Frame {packet.frame_number}: " f"{component_name} failed: {e}"
+                    error_msg = f"Frame {packet.frame_number}: {component_name} failed: {e}"
                     logger.error(error_msg)
                     metrics["errors"].append(error_msg)
 
@@ -1160,9 +1151,7 @@ class FrameProcessor:
 
                 try:
                     if not component.should_pass(packet):
-                        logger.debug(
-                            f"Frame {packet.frame_number}: " f"filtered by {component_name}"
-                        )
+                        logger.debug(f"Frame {packet.frame_number}: filtered by {component_name}")
 
                         # Track filter metrics
                         if component_name not in metrics["stage_metrics"]:
@@ -1182,7 +1171,7 @@ class FrameProcessor:
 
                         return None  # Frame filtered out, stop processing
 
-                    logger.debug(f"Frame {packet.frame_number}: " f"passed {component_name}")
+                    logger.debug(f"Frame {packet.frame_number}: passed {component_name}")
 
                     # Track filter metrics
                     if component_name not in metrics["stage_metrics"]:
@@ -1197,7 +1186,7 @@ class FrameProcessor:
                     metrics["stage_metrics"][component_name]["frames_passed"] += 1
 
                 except Exception as e:
-                    error_msg = f"Frame {packet.frame_number}: " f"{component_name} error: {e}"
+                    error_msg = f"Frame {packet.frame_number}: {component_name} error: {e}"
                     logger.error(error_msg)
                     metrics["errors"].append(error_msg)
 
@@ -1264,7 +1253,7 @@ class FrameProcessor:
 
                             except Exception as e:
                                 error_msg = (
-                                    f"Frame {packet.frame_number}: " f"{component_name} failed: {e}"
+                                    f"Frame {packet.frame_number}: {component_name} failed: {e}"
                                 )
                                 logger.error(error_msg)
                                 metrics["errors"].append(error_msg)
@@ -1287,9 +1276,7 @@ class FrameProcessor:
 
                 try:
                     if not component.should_pass(packet):
-                        logger.debug(
-                            f"Frame {packet.frame_number}: " f"filtered by {component_name}"
-                        )
+                        logger.debug(f"Frame {packet.frame_number}: filtered by {component_name}")
 
                         # Track filter metrics
                         if component_name not in metrics["stage_metrics"]:
@@ -1309,7 +1296,7 @@ class FrameProcessor:
 
                         return None  # Frame filtered out, stop processing
 
-                    logger.debug(f"Frame {packet.frame_number}: " f"passed {component_name}")
+                    logger.debug(f"Frame {packet.frame_number}: passed {component_name}")
 
                     # Track filter metrics
                     if component_name not in metrics["stage_metrics"]:
@@ -1324,7 +1311,7 @@ class FrameProcessor:
                     metrics["stage_metrics"][component_name]["frames_passed"] += 1
 
                 except Exception as e:
-                    error_msg = f"Frame {packet.frame_number}: " f"{component_name} error: {e}"
+                    error_msg = f"Frame {packet.frame_number}: {component_name} error: {e}"
                     logger.error(error_msg)
                     metrics["errors"].append(error_msg)
 
