@@ -7,6 +7,10 @@ based on their tags and temporal context.
 
 from decimatr.filters.base import Filter, StatefulFilter, StatelessFilter
 from decimatr.filters.blur import BlurFilter
+from decimatr.filters.comparison_strategies import (
+    ComparisonStrategy,
+    HammingDistanceStrategy,
+)
 from decimatr.filters.diversity import DiversityFilter
 from decimatr.filters.duplicate import DuplicateFilter
 from decimatr.filters.entropy import EntropyFilter
@@ -23,4 +27,6 @@ __all__ = [
     "DuplicateFilter",
     "MotionFilter",
     "DiversityFilter",
+    "ComparisonStrategy",
+    "HammingDistanceStrategy",
 ]
