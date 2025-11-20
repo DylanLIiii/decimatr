@@ -10,6 +10,9 @@ appropriate for its tag type.
 from abc import ABC, abstractmethod
 from typing import Any
 
+import imagehash
+import numpy as np
+
 
 class ComparisonStrategy(ABC):
     """
@@ -81,9 +84,6 @@ class ComparisonStrategy(ABC):
         pass
 
 
-import imagehash
-
-
 class HammingDistanceStrategy(ComparisonStrategy):
     """
     Compute Hamming distance between perceptual hashes.
@@ -150,8 +150,8 @@ class HammingDistanceStrategy(ComparisonStrategy):
         hamming_dist = hash1 - hash2
 
         # Normalize by hash bit length
-        # hash.hash is a numpy array, flatten and count bits
-        bit_length = len(hash1.hash.flatten()) * 8
+        # hash.hash is a boolean numpy array where each element is a bit
+        bit_length = hash1.hash.size
         normalized_dist = hamming_dist / bit_length
 
         return float(normalized_dist)
@@ -197,9 +197,6 @@ class HammingDistanceStrategy(ComparisonStrategy):
             "hamming" - identifier for Hamming distance strategy
         """
         return "hamming"
-
-
-import numpy as np
 
 
 class EmbeddingDistanceStrategy(ComparisonStrategy):

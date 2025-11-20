@@ -179,7 +179,7 @@ class GPUBatchProcessor(xo.Actor):
             results = self.tagger.compute_tags_batch([p.frame_data for p in self.batch])
 
             # Update packets with computed tags
-            for packet, tags in zip(self.batch, results):
+            for packet, tags in zip(self.batch, results, strict=False):
                 packet.tags.update(tags)
 
             # Clear batch and return processed frames

@@ -7,7 +7,9 @@ import numpy as np
 import pytest
 from decimatr.filters.comparison_strategies import (
     ComparisonStrategy,
+    EmbeddingDistanceStrategy,
     HammingDistanceStrategy,
+    HistogramDistanceStrategy,
 )
 from PIL import Image
 
@@ -68,8 +70,8 @@ class TestHammingDistanceStrategy:
         hashes = [imagehash.phash(img) for img in images]
 
         # Test all pairs
-        for i, hash1 in enumerate(hashes):
-            for j, hash2 in enumerate(hashes):
+        for _i, hash1 in enumerate(hashes):
+            for _j, hash2 in enumerate(hashes):
                 distance = strategy.compute_distance(hash1, hash2)
                 assert 0.0 <= distance <= 1.0, f"Distance {distance} out of range [0, 1]"
 
@@ -183,9 +185,6 @@ class TestHammingDistanceStrategy:
 
         # Distance should be small for similar images
         assert distance < 0.3  # Reasonable threshold for similar images
-
-
-from decimatr.filters.comparison_strategies import EmbeddingDistanceStrategy
 
 
 class TestEmbeddingDistanceStrategy:
@@ -424,9 +423,6 @@ class TestEmbeddingDistanceStrategy:
         distance = strategy.compute_distance(vec1, vec2)
         assert distance > 0.0
         assert distance < 0.01  # Should be small but non-zero
-
-
-from decimatr.filters.comparison_strategies import HistogramDistanceStrategy
 
 
 class TestHistogramDistanceStrategy:

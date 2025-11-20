@@ -1,9 +1,10 @@
-import pytest
-from unittest.mock import MagicMock, patch
 import datetime
-import numpy as np
-from decimatr.video_loader import load_video_frames
+from unittest.mock import MagicMock, patch
+
 import decord
+import numpy as np
+import pytest
+from decimatr.video_loader import load_video_frames
 
 
 class TestVideoLoader:

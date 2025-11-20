@@ -1,9 +1,11 @@
-import pytest
-from unittest.mock import MagicMock, patch
-import numpy as np
-from decimatr.utils import ImageHasher, write_packets_to_video
-from decimatr.scheme import VideoFramePacket
 import datetime
+from unittest.mock import MagicMock, patch
+
+import decimatr.utils
+import numpy as np
+import pytest
+from decimatr.scheme import VideoFramePacket
+from decimatr.utils import ImageHasher, write_packets_to_video
 
 # Check if imagehash is available
 try:
@@ -127,9 +129,6 @@ class TestWritePacketsToVideo:
 
         with pytest.raises(RuntimeError, match="Failed to initialize VideoWriter"):
             write_packets_to_video([packet], "out.mp4", logger)
-
-
-import decimatr.utils
 
 
 class TestExtractFrames:

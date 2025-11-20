@@ -70,7 +70,7 @@ class CLIPTagger(Tagger):
         model_name: str = "ViT-B-32",
         pretrained: str = "openai",
         device: str = "auto",
-        batch_size: int = 32
+        batch_size: int = 32,
     ):
         """
         Initialize CLIP tagger with open_clip.
@@ -109,7 +109,7 @@ class CLIPTagger(Tagger):
 
         self.device = device
         self.batch_size = batch_size
-        
+
         # Select model based on device
         if device == "cpu":
             # Use MobileCLIP for CPU - smallest variant for best performance
@@ -119,7 +119,7 @@ class CLIPTagger(Tagger):
             # Use standard CLIP for GPU
             self.model_name = model_name
             self.pretrained = pretrained
-        
+
         self._model = None
         self._preprocess = None
         self._tokenizer = None
@@ -149,14 +149,12 @@ class CLIPTagger(Tagger):
 
             # Load model and preprocessing transforms
             self._model, _, self._preprocess = open_clip.create_model_and_transforms(
-                self.model_name,
-                pretrained=self.pretrained,
-                device=self.device
+                self.model_name, pretrained=self.pretrained, device=self.device
             )
-            
+
             # Get tokenizer (for potential future text encoding)
             self._tokenizer = open_clip.get_tokenizer(self.model_name)
-            
+
             # Set to evaluation mode
             self._model.eval()
 
@@ -184,8 +182,7 @@ class CLIPTagger(Tagger):
             from PIL import Image
         except ImportError as e:
             raise GPUDependencyError(
-                f"Required dependencies not available: {e}. "
-                f"Install with: pip install decimatr[gpu]"
+                f"Required dependencies not available: {e}. Install with: pip install decimatr[gpu]"
             ) from e
 
         # Convert frame to PIL Image (CLIP expects RGB)
@@ -211,7 +208,7 @@ class CLIPTagger(Tagger):
 
         This method processes multiple frames in a single batch, which is
         significantly more efficient than processing frames individually.
-        
+
         For CPU devices, this uses MobileCLIP's optimized inference path.
         For GPU devices, this uses standard CLIP batch processing.
 
@@ -237,8 +234,7 @@ class CLIPTagger(Tagger):
             from PIL import Image
         except ImportError as e:
             raise GPUDependencyError(
-                f"Required dependencies not available: {e}. "
-                f"Install with: pip install decimatr[gpu]"
+                f"Required dependencies not available: {e}. Install with: pip install decimatr[gpu]"
             ) from e
 
         # Convert all frames to PIL Images
@@ -249,15 +245,10 @@ class CLIPTagger(Tagger):
 
         # Compute embeddings for entire batch
         with torch.no_grad():
-            if self.device == "cpu":
-                # Use MobileCLIP's optimized inference path for CPU
-                # MobileCLIP models in open_clip use the same encode_image interface
-                # but are optimized for CPU execution
-                embeddings = self._model.encode_image(image_inputs)
-            else:
-                # Standard CLIP inference for GPU
-                embeddings = self._model.encode_image(image_inputs)
-            
+            # The encode_image interface works for both standard CLIP on GPU
+            # and MobileCLIP on CPU
+            embeddings = self._model.encode_image(image_inputs)
+
             # Normalize embeddings (CLIP embeddings are typically normalized)
             embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
             # Convert to numpy

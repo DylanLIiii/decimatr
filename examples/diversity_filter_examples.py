@@ -101,7 +101,7 @@ def example_1_hash_based_diversity():
     frame_iter, result = processor.process(frames, return_result=True)
     selected_frames = list(frame_iter)
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Total frames: {result.total_frames}")
     print(f"  Selected frames: {result.selected_frames}")
     print(f"  Filtered frames: {result.filtered_frames}")
@@ -164,7 +164,7 @@ def example_2_clip_embedding_diversity():
         frame_iter, result = processor.process(frames, return_result=True)
         selected_frames = list(frame_iter)
 
-        print(f"\nResults:")
+        print("\nResults:")
         print(f"  Total frames: {result.total_frames}")
         print(f"  Selected frames: {result.selected_frames}")
         print(f"  Filtered frames: {result.filtered_frames}")
@@ -235,9 +235,7 @@ def example_3_color_histogram_diversity():
             buffer_size=50,
             diversity_tags=["color_hist"],  # Use color histogram
             min_distance=0.2,  # Histogram intersection distance threshold
-            comparison_strategies={
-                "color_hist": HistogramDistanceStrategy(metric="intersection")
-            },
+            comparison_strategies={"color_hist": HistogramDistanceStrategy(metric="intersection")},
         ),
     ]
 
@@ -247,7 +245,7 @@ def example_3_color_histogram_diversity():
     frame_iter, result = processor.process(frames, return_result=True)
     selected_frames = list(frame_iter)
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Total frames: {result.total_frames}")
     print(f"  Selected frames: {result.selected_frames}")
     print(f"  Filtered frames: {result.filtered_frames}")
@@ -321,7 +319,7 @@ def example_4_combining_multiple_tags():
     frame_iter, result = processor.process(frames, return_result=True)
     selected_frames = list(frame_iter)
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Total frames: {result.total_frames}")
     print(f"  Selected frames: {result.selected_frames}")
     print(f"  Filtered frames: {result.filtered_frames}")
@@ -393,7 +391,7 @@ def example_5_custom_comparison_strategies():
     frame_iter, result = processor.process(frames, return_result=True)
     selected_frames = list(frame_iter)
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Total frames: {result.total_frames}")
     print(f"  Selected frames: {result.selected_frames}")
     print(f"  Filtered frames: {result.filtered_frames}")
@@ -478,7 +476,7 @@ def example_6_weighted_combination_mode():
     frame_iter, result = processor.process(frames, return_result=True)
     selected_frames = list(frame_iter)
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Total frames: {result.total_frames}")
     print(f"  Selected frames: {result.selected_frames}")
     print(f"  Filtered frames: {result.filtered_frames}")
@@ -545,13 +543,11 @@ def example_7_auto_detection():
         if diversity_filter.should_pass(frame):
             selected_frames.append(frame)
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Total frames: {len(frames)}")
     print(f"  Selected frames: {len(selected_frames)}")
     print(f"  Filtered frames: {len(frames) - len(selected_frames)}")
-    print(
-        f"  Selection rate: {len(selected_frames) / len(frames) * 100:.1f}%"
-    )
+    print(f"  Selection rate: {len(selected_frames) / len(frames) * 100:.1f}%")
 
     print(f"\nSelected frame numbers: {[f.frame_number for f in selected_frames]}")
 
@@ -603,13 +599,11 @@ def example_8_backward_compatibility():
         if diversity_filter.should_pass(frame):
             selected_frames.append(frame)
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Total frames: {len(frames)}")
     print(f"  Selected frames: {len(selected_frames)}")
     print(f"  Filtered frames: {len(frames) - len(selected_frames)}")
-    print(
-        f"  Selection rate: {len(selected_frames) / len(frames) * 100:.1f}%"
-    )
+    print(f"  Selection rate: {len(selected_frames) / len(frames) * 100:.1f}%")
 
     print(f"\nSelected frame numbers: {[f.frame_number for f in selected_frames]}")
 

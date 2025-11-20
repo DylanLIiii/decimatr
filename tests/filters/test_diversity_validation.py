@@ -8,7 +8,6 @@ import sys
 
 import numpy as np
 import pytest
-
 from decimatr.filters.comparison_strategies import (
     ComparisonStrategy,
     EmbeddingDistanceStrategy,
@@ -39,12 +38,8 @@ class TestDiversityFilterValidation:
 
     def test_invalid_comparison_strategy_raises_error(self):
         """Test that invalid comparison strategy raises ValueError."""
-        with pytest.raises(
-            ValueError, match="must be a ComparisonStrategy instance"
-        ):
-            DiversityFilter(
-                comparison_strategies={"dhash": InvalidStrategy()}
-            )
+        with pytest.raises(ValueError, match="must be a ComparisonStrategy instance"):
+            DiversityFilter(comparison_strategies={"dhash": InvalidStrategy()})
 
     def test_valid_comparison_strategy_accepted(self):
         """Test that valid comparison strategies are accepted."""

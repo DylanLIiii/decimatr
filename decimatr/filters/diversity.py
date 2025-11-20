@@ -6,8 +6,6 @@ different from frames already in the buffer, ensuring a diverse sample of
 frames across various metrics (blur, entropy, color, etc.).
 """
 
-from typing import Dict, List, Optional
-
 import numpy as np
 from loguru import logger
 
@@ -76,12 +74,12 @@ class DiversityFilter(StatefulFilter):
     def __init__(
         self,
         buffer_size: int = 100,
-        diversity_tags: Optional[List[str]] = None,
+        diversity_tags: list[str] | None = None,
         min_distance: float = 0.1,
         metric: str = "euclidean",
-        comparison_strategies: Optional[Dict[str, ComparisonStrategy]] = None,
+        comparison_strategies: dict[str, ComparisonStrategy] | None = None,
         enable_weighted_combination: bool = False,
-        tag_weights: Optional[Dict[str, float]] = None,
+        tag_weights: dict[str, float] | None = None,
     ):
         """
         Initialize diversity filter with enhanced capabilities.
@@ -206,7 +204,7 @@ class DiversityFilter(StatefulFilter):
                     metric="intersection"
                 )
 
-    def _get_diversity_tags(self, packet: VideoFramePacket) -> List[str]:
+    def _get_diversity_tags(self, packet: VideoFramePacket) -> list[str]:
         """
         Determine which tags to use for diversity calculation.
 
@@ -248,7 +246,7 @@ class DiversityFilter(StatefulFilter):
         self,
         current_packet: VideoFramePacket,
         history_packet: VideoFramePacket,
-        tag_keys: List[str],
+        tag_keys: list[str],
     ) -> float:
         """
         Compute maximum distance across all tags (default behavior).
@@ -310,7 +308,7 @@ class DiversityFilter(StatefulFilter):
         self,
         current_packet: VideoFramePacket,
         history_packet: VideoFramePacket,
-        tag_keys: List[str],
+        tag_keys: list[str],
     ) -> float:
         """
         Compute weighted combination of tag distances.
@@ -400,7 +398,7 @@ class DiversityFilter(StatefulFilter):
         self,
         current_packet: VideoFramePacket,
         history_packet: VideoFramePacket,
-        tag_keys: List[str],
+        tag_keys: list[str],
     ) -> float:
         """
         Compute distance between current frame and a history frame.
@@ -434,15 +432,9 @@ class DiversityFilter(StatefulFilter):
             >>> # Returns weighted average of normalized distances
         """
         if self.enable_weighted_combination:
-            return self._compute_weighted_distance(
-                current_packet, history_packet, tag_keys
-            )
+            return self._compute_weighted_distance(current_packet, history_packet, tag_keys)
         else:
-            return self._compute_max_distance(
-                current_packet, history_packet, tag_keys
-            )
-
-
+            return self._compute_max_distance(current_packet, history_packet, tag_keys)
 
     def compare_with_history(
         self, packet: VideoFramePacket, history: list[VideoFramePacket]
