@@ -14,10 +14,11 @@ Decimatr is a modern, actor-based video frame processing library that provides a
 - **🎯 Simple API**: Process videos with just a few lines of code
 - **⚡ High Performance**: Actor-based parallel processing across CPU cores
 - **🧠 Smart Filtering**: Predefined strategies for common use cases (blur removal, duplicate detection, diversity sampling)
+- **🎨 Enhanced Diversity Filter**: Tag classification, custom comparison strategies, and multi-metric diversity
 - **🔧 Extensible**: Easy to create custom taggers and filters
 - **💾 Memory Efficient**: Lazy evaluation and automatic memory release
 - **📊 Comprehensive Metrics**: Detailed performance tracking and monitoring
-- **🎮 Optional GPU**: GPU acceleration for compute-intensive operations (CLIP embeddings)
+- **🎮 Optional GPU**: GPU acceleration with OpenCLIP (standard CLIP on GPU, MobileCLIP on CPU)
 
 ## Installation
 
@@ -165,10 +166,13 @@ motion_filter = MotionFilter(
     buffer_size=10
 )
 
-# Maximize diversity
+# Maximize diversity (enhanced with tag classification)
 diversity_filter = DiversityFilter(
-    window_size=100,
-    min_distance=0.1
+    buffer_size=100,
+    diversity_tags=['dhash', 'clip_embedding'],  # Specify diversity tags
+    min_distance=0.1,
+    enable_weighted_combination=True,  # Optional: combine metrics
+    tag_weights={'dhash': 0.3, 'clip_embedding': 0.7}  # Optional: custom weights
 )
 ```
 
@@ -387,6 +391,7 @@ pip install decimatr[gpu]
 
 # Or install manually
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+pip install open-clip-torch>=2.20.0
 ```
 
 ## API Reference
