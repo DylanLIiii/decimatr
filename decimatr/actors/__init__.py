@@ -6,6 +6,7 @@ processing across multiple CPU cores and optional GPU resources.
 """
 
 from decimatr.actors.filter_actor import FilterActor
+from decimatr.actors.gpu_actor import GPUBatchProcessor
 from decimatr.actors.pipeline import ActorPipeline
 from decimatr.actors.stateful_actor import StatefulFilterActor
 from decimatr.actors.tagger_actor import TaggerActor
@@ -15,4 +16,5 @@ __all__ = [
     "FilterActor",
     "StatefulFilterActor",
     "ActorPipeline",
+    "GPUBatchProcessor",
 ]

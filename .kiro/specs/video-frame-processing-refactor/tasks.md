@@ -273,8 +273,11 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
 
 ## Phase 8: GPU Batch Processing (Optional)
 
-- [ ] 18. Implement GPU batch processing actors
-- [ ] 18.1 Create GPUBatchProcessor actor
+- [x] 18. Implement GPU batch processing actors
+
+When start this. You may need to use Batch method API as shown in https://github.com/xorbitsai/xoscar/blob/main/README.md. Core is that in message level we send as loop. Then we wait for it then accumate messagge for GPU batch process. 
+
+- [x] 18.1 Create GPUBatchProcessor actor
   - Create `decimatr/actors/gpu_actor.py`
   - Decorate with `@xo.actor`
   - Accept GPU-enabled Tagger and batch_size
@@ -284,7 +287,7 @@ This plan refactors Decimatr from its current gate-based architecture into a mod
   - Track GPU failures and switch to CPU after threshold
   - _Requirements: 6.3, 6.7, 11.7_
 
-- [ ] 18.2 Integrate GPU actors into ActorPipeline
+- [x] 18.2 Integrate GPU actors into ActorPipeline
   - Detect GPU-enabled taggers in pipeline
   - Create GPUBatchProcessor for taggers with `requires_gpu=True`
   - Create CPU actor pools for other taggers
