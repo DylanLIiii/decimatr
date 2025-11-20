@@ -1,9 +1,10 @@
-import pytest
+import datetime
 from collections import deque
+
+import numpy as np
+import pytest
 from decimatr.core.temporal_buffer import TemporalBuffer
 from decimatr.scheme import VideoFramePacket
-import datetime
-import numpy as np
 
 
 class TestTemporalBuffer:

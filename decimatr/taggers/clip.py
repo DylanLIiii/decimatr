@@ -6,7 +6,11 @@ for frames using GPU acceleration when available. CLIP embeddings can be used
 for semantic similarity comparison, content-based filtering, and diversity
 sampling.
 
-Note: This tagger requires optional GPU dependencies (torch, torchvision).
+This implementation uses open_clip library with automatic model selection:
+- GPU: Standard CLIP models (ViT-B-32, ViT-L-14, etc.)
+- CPU: MobileCLIP models optimized for CPU inference
+
+Note: This tagger requires optional GPU dependencies (torch, open-clip-torch).
 Install with: pip install decimatr[gpu]
 """
 
@@ -22,30 +26,35 @@ from decimatr.taggers.base import Tagger
 
 class CLIPTagger(Tagger):
     """
-    Compute CLIP embeddings using GPU (when available).
+    Compute CLIP embeddings using open_clip library.
 
-    This tagger uses OpenAI's CLIP model to compute semantic embeddings for
-    video frames. CLIP embeddings capture high-level semantic content and can
-    be used for:
+    This tagger uses the open_clip library to compute semantic embeddings for
+    video frames. It automatically selects the appropriate model based on device:
+    - GPU: Standard CLIP models (ViT-B-32, ViT-L-14, etc.)
+    - CPU: MobileCLIP models optimized for efficient CPU inference
+
+    CLIP embeddings capture high-level semantic content and can be used for:
     - Semantic similarity comparison
     - Content-based frame selection
     - Diversity-based sampling
 
     The tagger supports both single-frame and batch processing. Batch processing
-    is significantly more efficient on GPU and should be used when possible.
+    is significantly more efficient on both GPU and CPU.
 
     GPU Requirements:
         - torch >= 2.0.0
         - torchvision >= 0.15.0
+        - open-clip-torch >= 2.32.0
         - CUDA-capable GPU
         - Install with: pip install decimatr[gpu]
 
     Example:
         >>> # Check GPU availability first
         >>> if GPUCapabilities.is_available():
-        ...     tagger = CLIPTagger(model_name="ViT-B/32", device="cuda")
+        ...     tagger = CLIPTagger(model_name="ViT-B-32", device="cuda")
         ... else:
-        ...     tagger = CLIPTagger(model_name="ViT-B/32", device="cpu")
+        ...     # Automatically uses MobileCLIP for CPU
+        ...     tagger = CLIPTagger(device="cpu")
         >>>
         >>> # Single frame processing
         >>> tags = tagger.compute_tags(packet)
@@ -56,20 +65,32 @@ class CLIPTagger(Tagger):
         >>> tags_list = tagger.compute_tags_batch(frames)
     """
 
-    def __init__(self, model_name: str = "ViT-B/32", device: str = "auto"):
+    def __init__(
+        self,
+        model_name: str = "ViT-B-32",
+        pretrained: str = "openai",
+        device: str = "auto",
+        batch_size: int = 32,
+    ):
         """
-        Initialize CLIP tagger.
+        Initialize CLIP tagger with open_clip.
 
         Args:
-            model_name: CLIP model variant to use. Options include:
-                - "ViT-B/32" (default): Balanced performance and accuracy
-                - "ViT-B/16": Higher accuracy, slower
-                - "ViT-L/14": Highest accuracy, slowest
+            model_name: CLIP model variant to use (for GPU). Options include:
+                - "ViT-B-32" (default): Balanced performance and accuracy
+                - "ViT-B-16": Higher accuracy, slower
+                - "ViT-L-14": Highest accuracy, slowest
                 - "RN50": ResNet-50 based, faster but less accurate
+                Note: For CPU, MobileCLIP models are automatically selected
+            pretrained: Pretrained weights to use (for GPU):
+                - "openai" (default): OpenAI's pretrained weights
+                - "laion2b_s34b_b79k": LAION-2B trained weights
+                - "laion400m_e32": LAION-400M trained weights
             device: Device to use for computation:
                 - "auto" (default): Use CUDA if available, otherwise CPU
                 - "cuda": Force GPU usage (raises error if unavailable)
-                - "cpu": Force CPU usage
+                - "cpu": Force CPU usage (uses MobileCLIP)
+            batch_size: Batch size for batch processing (default: 32)
 
         Raises:
             GPUDependencyError: If device="cuda" but GPU dependencies are missing
@@ -87,31 +108,55 @@ class CLIPTagger(Tagger):
             )
 
         self.device = device
-        self.model_name = model_name
+        self.batch_size = batch_size
+
+        # Select model based on device
+        if device == "cpu":
+            # Use MobileCLIP for CPU - smallest variant for best performance
+            self.model_name = "MobileCLIP-S1"
+            self.pretrained = "datacompdr"
+        else:
+            # Use standard CLIP for GPU
+            self.model_name = model_name
+            self.pretrained = pretrained
+
         self._model = None
         self._preprocess = None
+        self._tokenizer = None
 
     def _load_model(self):
         """
-        Lazy load CLIP model.
+        Lazy load CLIP model using open_clip.
 
         The model is loaded on first use to avoid unnecessary initialization
         overhead. This also allows the tagger to be instantiated even if
         CLIP dependencies are not available (error will be raised on first use).
 
+        For CPU devices, MobileCLIP models are automatically loaded for
+        optimized inference performance.
+
         Raises:
-            ImportError: If CLIP dependencies (torch, clip) are not installed
+            GPUDependencyError: If open_clip dependencies are not installed
         """
         if self._model is None:
             try:
-                import clip
+                import open_clip
             except ImportError as e:
                 raise GPUDependencyError(
-                    f"CLIP dependencies not available: {e}. Install with: pip install decimatr[gpu]"
+                    f"open_clip dependencies not available: {e}. "
+                    f"Install with: pip install decimatr[gpu]"
                 ) from e
 
-            self._model, self._preprocess = clip.load(self.model_name, device=self.device)
-            self._model.eval()  # Set to evaluation mode
+            # Load model and preprocessing transforms
+            self._model, _, self._preprocess = open_clip.create_model_and_transforms(
+                self.model_name, pretrained=self.pretrained, device=self.device
+            )
+
+            # Get tokenizer (for potential future text encoding)
+            self._tokenizer = open_clip.get_tokenizer(self.model_name)
+
+            # Set to evaluation mode
+            self._model.eval()
 
     def compute_tags(self, packet: VideoFramePacket) -> dict[str, Any]:
         """
@@ -128,7 +173,7 @@ class CLIPTagger(Tagger):
             >>> tagger = CLIPTagger()
             >>> tags = tagger.compute_tags(packet)
             >>> embedding = tags["clip_embedding"]
-            >>> print(embedding.shape)  # (512,) for ViT-B/32
+            >>> print(embedding.shape)  # (512,) for ViT-B-32
         """
         self._load_model()
 
@@ -159,10 +204,13 @@ class CLIPTagger(Tagger):
 
     def compute_tags_batch(self, frames: list[np.ndarray]) -> list[dict[str, Any]]:
         """
-        Batch compute CLIP embeddings (efficient GPU processing).
+        Batch compute CLIP embeddings (efficient for both GPU and CPU).
 
         This method processes multiple frames in a single batch, which is
-        significantly more efficient on GPU than processing frames individually.
+        significantly more efficient than processing frames individually.
+
+        For CPU devices, this uses MobileCLIP's optimized inference path.
+        For GPU devices, this uses standard CLIP batch processing.
 
         Args:
             frames: List of frame data arrays (np.ndarray) in RGB format
@@ -177,7 +225,7 @@ class CLIPTagger(Tagger):
             >>> tags_list = tagger.compute_tags_batch(frames)
             >>> for tags in tags_list:
             ...     embedding = tags["clip_embedding"]
-            ...     print(embedding.shape)  # (512,) for ViT-B/32
+            ...     print(embedding.shape)  # (512,) for ViT-B-32
         """
         self._load_model()
 
@@ -197,8 +245,11 @@ class CLIPTagger(Tagger):
 
         # Compute embeddings for entire batch
         with torch.no_grad():
+            # The encode_image interface works for both standard CLIP on GPU
+            # and MobileCLIP on CPU
             embeddings = self._model.encode_image(image_inputs)
-            # Normalize embeddings
+
+            # Normalize embeddings (CLIP embeddings are typically normalized)
             embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
             # Convert to numpy
             embeddings = embeddings.cpu().numpy()

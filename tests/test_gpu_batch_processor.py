@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 import xoscar as xo
-
 from decimatr.actors.gpu_actor import GPUBatchProcessor
 from decimatr.scheme import VideoFramePacket
 from decimatr.taggers.base import Tagger

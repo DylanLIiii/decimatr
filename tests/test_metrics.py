@@ -1,6 +1,7 @@
 import time
+
 import pytest
-from decimatr.metrics import ProcessingMetrics, StageMetrics, MetricsCollector
+from decimatr.metrics import MetricsCollector, ProcessingMetrics, StageMetrics
 
 
 class TestStageMetrics:

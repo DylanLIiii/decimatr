@@ -6,6 +6,16 @@ This guide covers GPU installation, configuration, and troubleshooting for Decim
 
 Decimatr supports optional GPU acceleration for compute-intensive operations like CLIP embeddings. GPU support is **completely optional** - the library works perfectly with CPU-only dependencies for most use cases.
 
+### CLIP Implementation
+
+Decimatr uses the [OpenCLIP](https://github.com/mlfoundations/open_clip) library for CLIP embeddings, which provides:
+- Multiple pretrained CLIP models (ViT-B-32, ViT-L-14, etc.)
+- Automatic model selection based on device (GPU/CPU)
+- MobileCLIP models optimized for CPU inference
+- Efficient batch processing for both GPU and CPU
+
+When using CPU, Decimatr automatically selects MobileCLIP models for optimal performance.
+
 ## When to Use GPU
 
 ### Use GPU When:
@@ -43,8 +53,7 @@ pip install decimatr[gpu]
 This installs:
 - `torch` (PyTorch with CUDA support)
 - `torchvision`
-- `ftfy` (text processing for CLIP)
-- `regex` (required by CLIP)
+- `open-clip-torch` (OpenCLIP library for CLIP models)
 
 ### Step 3: Verify Installation
 
@@ -77,14 +86,14 @@ If automatic installation doesn't work, install dependencies manually:
 
 ```bash
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-pip install ftfy regex
+pip install open-clip-torch>=2.20.0
 ```
 
 ### For CUDA 12.1
 
 ```bash
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-pip install ftfy regex
+pip install open-clip-torch>=2.20.0
 ```
 
 ### For CPU-Only PyTorch
@@ -93,7 +102,7 @@ If you want PyTorch but without GPU support:
 
 ```bash
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-pip install ftfy regex
+pip install open-clip-torch>=2.20.0
 ```
 
 ## Using GPU Acceleration

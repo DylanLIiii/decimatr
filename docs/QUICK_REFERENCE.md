@@ -97,14 +97,27 @@ from decimatr.taggers.clip import CLIPTagger  # Requires GPU dependencies
 # Blur detection
 BlurTagger()
 
-# Perceptual hashing
-HashTagger(hash_type='phash', hash_size=8)
+# Perceptual hashing (for diversity)
+HashTagger(hash_type='dhash')  # Fast, good for diversity
+HashTagger(hash_type='phash')  # More robust
+HashTagger(hash_type='ahash')  # Fastest
 
 # Entropy calculation
 EntropyTagger()
 
-# CLIP embeddings (GPU)
-CLIPTagger(model_name="ViT-B/32", device="cuda")
+# CLIP embeddings (GPU - standard CLIP)
+CLIPTagger(
+    model_name='ViT-B-32',
+    pretrained='openai',
+    device='cuda',
+    batch_size=32
+)
+
+# CLIP embeddings (CPU - MobileCLIP)
+CLIPTagger(device='cpu', batch_size=8)
+
+# CLIP embeddings (auto-select GPU/CPU)
+CLIPTagger(device='auto')
 ```
 
 ## Available Filters
@@ -132,6 +145,11 @@ ThresholdFilter(tag_key='blur_score', threshold=100.0, operator='>')
 from decimatr.filters.duplicate import DuplicateFilter
 from decimatr.filters.motion import MotionFilter
 from decimatr.filters.diversity import DiversityFilter
+from decimatr.filters.comparison_strategies import (
+    HammingDistanceStrategy,
+    EmbeddingDistanceStrategy,
+    HistogramDistanceStrategy
+)
 
 # Duplicate detection
 DuplicateFilter(threshold=0.05, buffer_size=50)
@@ -139,8 +157,34 @@ DuplicateFilter(threshold=0.05, buffer_size=50)
 # Motion/scene change detection
 MotionFilter(threshold=0.3, buffer_size=10)
 
-# Diversity sampling
-DiversityFilter(window_size=100, min_distance=0.1)
+# Diversity sampling (basic)
+DiversityFilter(buffer_size=100, min_distance=0.1)
+
+# Diversity with hash-based comparison
+DiversityFilter(
+    buffer_size=100,
+    diversity_tags=['dhash'],
+    min_distance=0.1
+)
+
+# Diversity with CLIP embeddings
+DiversityFilter(
+    buffer_size=100,
+    diversity_tags=['clip_embedding'],
+    min_distance=0.2,
+    comparison_strategies={
+        'clip_embedding': EmbeddingDistanceStrategy(metric='cosine')
+    }
+)
+
+# Multi-metric diversity with weights
+DiversityFilter(
+    buffer_size=100,
+    diversity_tags=['dhash', 'clip_embedding'],
+    min_distance=0.1,
+    enable_weighted_combination=True,
+    tag_weights={'dhash': 0.3, 'clip_embedding': 0.7}
+)
 ```
 
 ## Available Strategies
@@ -288,6 +332,92 @@ class MyStrategy(FilterStrategy):
             MyTagger(),
             MyFilter(threshold=self.threshold)
         ]
+```
+
+## Diversity Filter Patterns
+
+### Hash-Based Diversity (Fast)
+
+```python
+from decimatr.taggers.hash import HashTagger
+from decimatr.filters.diversity import DiversityFilter
+
+pipeline = [
+    HashTagger(hash_type='dhash'),
+    DiversityFilter(
+        buffer_size=100,
+        diversity_tags=['dhash'],
+        min_distance=0.1
+    )
+]
+```
+
+### CLIP Embedding Diversity (Semantic)
+
+```python
+from decimatr.taggers.clip import CLIPTagger
+from decimatr.filters.diversity import DiversityFilter
+from decimatr.filters.comparison_strategies import EmbeddingDistanceStrategy
+
+pipeline = [
+    CLIPTagger(device='cuda', batch_size=32),
+    DiversityFilter(
+        buffer_size=100,
+        diversity_tags=['clip_embedding'],
+        min_distance=0.2,
+        comparison_strategies={
+            'clip_embedding': EmbeddingDistanceStrategy(metric='cosine')
+        }
+    )
+]
+```
+
+### Combined Visual + Semantic Diversity
+
+```python
+from decimatr.taggers.hash import HashTagger
+from decimatr.taggers.clip import CLIPTagger
+from decimatr.filters.diversity import DiversityFilter
+from decimatr.filters.comparison_strategies import (
+    HammingDistanceStrategy,
+    EmbeddingDistanceStrategy
+)
+
+pipeline = [
+    HashTagger(hash_type='dhash'),
+    CLIPTagger(device='cuda'),
+    DiversityFilter(
+        buffer_size=100,
+        diversity_tags=['dhash', 'clip_embedding'],
+        min_distance=0.1,
+        enable_weighted_combination=True,
+        tag_weights={'dhash': 0.3, 'clip_embedding': 0.7},
+        comparison_strategies={
+            'dhash': HammingDistanceStrategy(),
+            'clip_embedding': EmbeddingDistanceStrategy(metric='cosine')
+        }
+    )
+]
+```
+
+### Multi-Stage: Blur Removal + Diversity
+
+```python
+from decimatr.taggers.blur import BlurTagger
+from decimatr.taggers.hash import HashTagger
+from decimatr.filters.blur import BlurFilter
+from decimatr.filters.diversity import DiversityFilter
+
+pipeline = [
+    BlurTagger(),
+    HashTagger(hash_type='dhash'),
+    BlurFilter(threshold=100.0),  # Remove blurry frames first
+    DiversityFilter(
+        buffer_size=100,
+        diversity_tags=['dhash'],
+        min_distance=0.1
+    )
+]
 ```
 
 ## Common Patterns

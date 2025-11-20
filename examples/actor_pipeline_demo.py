@@ -33,7 +33,7 @@ def create_sample_frames(count: int = 10) -> list:
             timestamp=timedelta(seconds=i / 30.0),
             source_video_id="demo_video",
             tags={},
-            additional_metadata={}
+            additional_metadata={},
         )
         frames.append(packet)
 
@@ -47,7 +47,7 @@ def demo_single_threaded():
     # Create processor with blur removal
     processor = FrameProcessor.with_blur_removal(
         threshold=50.0,
-        n_workers=1  # Single-threaded
+        n_workers=1,  # Single-threaded
     )
 
     # Create sample frames
@@ -59,7 +59,9 @@ def demo_single_threaded():
     print(f"Selected {len(results)} frames after filtering")
 
     for frame in results:
-        print(f"  - Frame {frame.frame_number}: blur_score={frame.tags.get('blur_score', 'N/A'):.2f}")
+        print(
+            f"  - Frame {frame.frame_number}: blur_score={frame.tags.get('blur_score', 'N/A'):.2f}"
+        )
 
 
 def demo_parallel_processing():
@@ -69,7 +71,7 @@ def demo_parallel_processing():
     # Create processor with parallel execution
     processor = FrameProcessor.with_blur_removal(
         threshold=50.0,
-        n_workers=4  # Actor-based parallel processing
+        n_workers=4,  # Actor-based parallel processing
     )
 
     # Create sample frames
@@ -89,7 +91,9 @@ def demo_parallel_processing():
     print(f"  Throughput: {result.get_throughput():.1f} frames/sec")
 
     for frame in results:
-        print(f"  - Frame {frame.frame_number}: blur_score={frame.tags.get('blur_score', 'N/A'):.2f}")
+        print(
+            f"  - Frame {frame.frame_number}: blur_score={frame.tags.get('blur_score', 'N/A'):.2f}"
+        )
 
 
 def demo_smart_sampling():

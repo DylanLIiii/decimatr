@@ -17,7 +17,6 @@ import asyncio
 from datetime import timedelta
 
 import numpy as np
-
 from decimatr.actors.gpu_actor import GPUBatchProcessor
 from decimatr.core.processor import FrameProcessor
 from decimatr.scheme import VideoFramePacket
@@ -107,7 +106,7 @@ async def demo_gpu_batch_processor():
 
     # Process frames through batch processor
     processed_count = 0
-    for i, frame in enumerate(frames):
+    for _i, frame in enumerate(frames):
         result = await batch_processor.add_frame(frame)
 
         if result is not None:
@@ -153,9 +152,7 @@ def demo_frame_processor_with_gpu():
         use_gpu = True
 
     # Create CLIP tagger
-    clip_tagger = CLIPTagger(
-        model_name="ViT-B/32", device="cuda" if use_gpu else "cpu"
-    )
+    clip_tagger = CLIPTagger(model_name="ViT-B/32", device="cuda" if use_gpu else "cpu")
 
     # Create processor with GPU support
     processor = FrameProcessor(

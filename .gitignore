@@ -192,4 +192,4 @@ pyrightconfig.json
 
 # Claude Code local settings (keep project settings.json, ignore local overrides)
 .claude/settings.local.json
-.claude/*.log
+.claude/*.log.kiro/

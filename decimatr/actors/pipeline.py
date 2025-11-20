@@ -418,7 +418,7 @@ class ActorPipeline:
         all_processed = []
 
         # Flush each GPU batch processor
-        for i, component in enumerate(self.pipeline):
+        for i, _component in enumerate(self.pipeline):
             if self._is_gpu_stage(i):
                 stage_name = f"stage_{i}"
                 actor_ref = self.actor_pools[stage_name]

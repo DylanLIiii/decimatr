@@ -542,7 +542,9 @@ tags = tagger.compute_tags(packet)
 
 ### CLIPTagger
 
-Compute CLIP embeddings using GPU (requires GPU dependencies).
+Compute CLIP embeddings using OpenCLIP library with GPU/CPU support.
+
+Uses standard CLIP models on GPU and MobileCLIP models on CPU for efficient processing.
 
 ```python
 from decimatr.taggers.clip import CLIPTagger
@@ -551,33 +553,160 @@ from decimatr.taggers.clip import CLIPTagger
 #### Constructor
 
 ```python
-CLIPTagger(model_name: str = "ViT-B/32", device: str = "auto")
+CLIPTagger(
+    model_name: str = "ViT-B-32",
+    pretrained: str = "openai",
+    device: str = "auto",
+    batch_size: int = 32
+)
 ```
 
 **Parameters:**
-- **model_name** (`str`, default="ViT-B/32"): CLIP model variant
-- **device** (`str`, default="auto"): Device ('auto', 'cuda', or 'cpu')
+
+- **model_name** (`str`, default="ViT-B-32"): CLIP model architecture. Common values:
+  - GPU: `'ViT-B-32'`, `'ViT-L-14'`, `'ViT-H-14'`
+  - CPU: Automatically uses `'MobileCLIP-S0'`, `'MobileCLIP-S1'`, or `'MobileCLIP-S2'`
+
+- **pretrained** (`str`, default="openai"): Pretrained weights. Common values:
+  - `'openai'` - Original OpenAI weights
+  - `'laion2b_s34b_b79k'` - LAION-2B trained weights
+  - `'datacompdr'` - DataComp trained weights (for MobileCLIP)
+
+- **device** (`str`, default="auto"): Device for computation:
+  - `'auto'` - Automatically selects CUDA if available, otherwise CPU
+  - `'cuda'` - Force GPU (uses standard CLIP models)
+  - `'cpu'` - Force CPU (automatically uses MobileCLIP for efficiency)
+
+- **batch_size** (`int`, default=32): Batch size for processing multiple frames:
+  - GPU: 32-64 recommended for optimal throughput
+  - CPU: 8-16 recommended for MobileCLIP
 
 **Raises:**
 - `GPUDependencyError`: If GPU requested but dependencies are missing
 
+**Model Selection:**
+
+The tagger automatically selects the appropriate model based on device:
+
+- **GPU mode** (`device='cuda'`): Uses standard CLIP models (ViT-B-32, ViT-L-14, etc.)
+  - Higher quality embeddings
+  - Faster with GPU acceleration
+  - Requires: `pip install decimatr[gpu]`
+
+- **CPU mode** (`device='cpu'`): Automatically uses MobileCLIP models
+  - Optimized for CPU inference
+  - Smaller model size and faster CPU processing
+  - Still produces high-quality embeddings
+  - Requires: `pip install decimatr[gpu]` (includes open-clip-torch)
+
 #### Tags Produced
 
-- **clip_embedding** (`np.ndarray`): CLIP embedding vector
+- **clip_embedding** (`np.ndarray`): CLIP embedding vector (typically 512 or 768 dimensions)
+
+#### Methods
+
+##### compute_tags()
+
+```python
+def compute_tags(self, packet: VideoFramePacket) -> Dict[str, Any]
+```
+
+Compute CLIP embedding for a single frame.
+
+**Parameters:**
+- **packet** (`VideoFramePacket`): Frame packet
+
+**Returns:** Dict with `'clip_embedding'` key containing numpy array
+
+##### compute_tags_batch()
+
+```python
+def compute_tags_batch(self, frames: List[np.ndarray]) -> List[Dict[str, Any]]
+```
+
+Batch compute CLIP embeddings (efficient for both GPU and CPU).
+
+**Parameters:**
+- **frames** (`List[np.ndarray]`): List of frame arrays
+
+**Returns:** List of dicts with `'clip_embedding'` keys
+
+**Note:** Batch processing significantly improves throughput, especially on GPU.
 
 #### Properties
 
 - `supports_gpu`: `True`
-- `requires_gpu`: `False` (can fall back to CPU)
+- `requires_gpu`: `False` (can run on CPU with MobileCLIP)
+- `tag_keys`: `['clip_embedding']`
 
-#### Example
+#### Examples
+
+**GPU mode (standard CLIP):**
 
 ```python
 # Requires: pip install decimatr[gpu]
-tagger = CLIPTagger(model_name="ViT-B/32", device="cuda")
+tagger = CLIPTagger(
+    model_name='ViT-B-32',
+    pretrained='openai',
+    device='cuda',
+    batch_size=32
+)
+
+# Single frame
 tags = tagger.compute_tags(packet)
-# tags = {"clip_embedding": array([...])}
+# tags = {"clip_embedding": array([...], shape=(512,))}
+
+# Batch processing (recommended for GPU)
+frames = [frame1, frame2, frame3, ...]
+batch_tags = tagger.compute_tags_batch(frames)
 ```
+
+**CPU mode (MobileCLIP):**
+
+```python
+# Automatically uses MobileCLIP for efficient CPU processing
+tagger = CLIPTagger(
+    device='cpu',
+    batch_size=8
+)
+
+tags = tagger.compute_tags(packet)
+# Uses MobileCLIP under the hood
+```
+
+**Auto mode (recommended):**
+
+```python
+# Automatically selects GPU if available, otherwise CPU
+tagger = CLIPTagger(device='auto', batch_size=32)
+```
+
+**Different CLIP models:**
+
+```python
+# Larger model for better quality (GPU)
+tagger = CLIPTagger(
+    model_name='ViT-L-14',
+    pretrained='openai',
+    device='cuda'
+)
+
+# LAION-trained model (GPU)
+tagger = CLIPTagger(
+    model_name='ViT-B-32',
+    pretrained='laion2b_s34b_b79k',
+    device='cuda'
+)
+```
+
+**Performance:**
+- GPU (ViT-B-32, batch=32): ~100-200 frames/second
+- CPU (MobileCLIP, batch=8): ~20-30 frames/second
+- Single frame (no batching): ~5-10 frames/second
+
+**See Also:**
+- [GPU Setup Guide](GPU_SETUP.md) - Installing GPU dependencies
+- [Diversity Filter Examples](DIVERSITY_FILTER_EXAMPLES.md) - Using CLIP for diversity
 
 ---
 
@@ -918,7 +1047,9 @@ filter = MotionFilter(threshold=0.4, buffer_size=5)
 
 ### DiversityFilter
 
-Select frames maximizing tag diversity.
+Select frames maximizing tag diversity using tag classification and custom comparison strategies.
+
+The enhanced DiversityFilter distinguishes between diversity-suitable tags (hashes, embeddings, histograms) and metric-only tags (blur_score, entropy). It supports different comparison strategies for different tag types and can combine multiple diversity metrics.
 
 ```python
 from decimatr.filters.diversity import DiversityFilter
@@ -928,29 +1059,542 @@ from decimatr.filters.diversity import DiversityFilter
 
 ```python
 DiversityFilter(
-    window_size: int = 100,
+    buffer_size: int = 100,
+    diversity_tags: Optional[List[str]] = None,
     min_distance: float = 0.1,
-    diversity_metric: str = 'euclidean'
+    metric: str = "euclidean",
+    comparison_strategies: Optional[Dict[str, ComparisonStrategy]] = None,
+    enable_weighted_combination: bool = False,
+    tag_weights: Optional[Dict[str, float]] = None
 )
 ```
 
 **Parameters:**
-- **window_size** (`int`, default=100): Size of diversity window
-- **min_distance** (`float`, default=0.1): Minimum distance for diversity
-- **diversity_metric** (`str`, default='euclidean'): Distance metric
+
+- **buffer_size** (`int`, default=100): Maximum number of diverse frames to maintain in temporal buffer. Larger values allow more diversity but use more memory.
+
+- **diversity_tags** (`Optional[List[str]]`, default=None): List of tag keys to use for diversity calculation. If `None`, auto-detects diversity-suitable tags from available frame tags. Recommended tags: `['dhash', 'clip_embedding', 'color_hist']`.
+
+- **min_distance** (`float`, default=0.1): Minimum distance threshold for a frame to pass. Frame must be at least this distance from all frames in buffer to be considered diverse enough. Range depends on metric and tag scales.
+
+- **metric** (`str`, default='euclidean'): Distance metric for backward compatibility. Valid values: `'euclidean'`, `'manhattan'`, `'cosine'`. Used as default for embedding tags when no strategy specified.
+
+- **comparison_strategies** (`Optional[Dict[str, ComparisonStrategy]]`, default=None): Custom comparison strategies per tag. Maps tag keys to `ComparisonStrategy` instances. If not specified, uses sensible defaults:
+  - Hash tags (`dhash`, `phash`, `ahash`): `HammingDistanceStrategy`
+  - Embedding tags (`clip_embedding`, `model_embedding`): `EmbeddingDistanceStrategy`
+  - Histogram tags (`color_hist`): `HistogramDistanceStrategy`
+
+- **enable_weighted_combination** (`bool`, default=False): Enable weighted combination of tag distances. If `False` (default), uses maximum distance across tags. If `True`, combines normalized distances using weights.
+
+- **tag_weights** (`Optional[Dict[str, float]]`, default=None): Weights for each tag when weighted combination is enabled. If not specified, uses equal weights for all tags. Weights are automatically normalized to sum to 1.0.
+
+**Raises:**
+
+- `ValueError`: If `metric` is invalid, `min_distance` is negative, or comparison strategies are invalid
+
+**Tag Classification:**
+
+The filter automatically classifies tags into two categories:
+
+- **Diversity-Suitable Tags** (included in diversity calculations):
+  - Perceptual hashes: `dhash`, `phash`, `ahash`
+  - Embeddings: `clip_embedding`, `model_embedding`
+  - Color histograms: `color_hist`, `color_histogram`
+
+- **Metric-Only Tags** (excluded from diversity calculations):
+  - `blur_score` - measures blur, not visual diversity
+  - `entropy` - measures information content, not visual diversity
+  - `edge_density` - measures edge content, not visual diversity
+
+**Comparison Strategies:**
+
+Available comparison strategies from `decimatr.filters.comparison_strategies`:
+
+- **HammingDistanceStrategy**: For perceptual hashes (dhash, phash, ahash)
+  - Computes normalized Hamming distance in range [0, 1]
+  - Recommended threshold: 0.05-0.15
+
+- **EmbeddingDistanceStrategy(metric)**: For embeddings (CLIP, custom models)
+  - Supports `'euclidean'`, `'cosine'`, `'manhattan'` metrics
+  - Cosine distance range: [0, 2], recommended threshold: 0.1-0.3
+  - Euclidean distance range: [0, ~10+], recommended threshold: 1.0-5.0
+
+- **HistogramDistanceStrategy(metric)**: For color histograms
+  - Supports `'intersection'`, `'chi_square'`, `'bhattacharyya'` metrics
+  - Intersection range: [0, 1], recommended threshold: 0.2-0.4
 
 #### Required Tags
 
-- Depends on diversity metric (typically `clip_embedding` or similar)
+Returns configured `diversity_tags` if specified, otherwise empty list (auto-detection at runtime).
+
+#### Methods
+
+##### compare_with_history()
+
+```python
+def compare_with_history(
+    packet: VideoFramePacket,
+    history: List[VideoFramePacket]
+) -> bool
+```
+
+Compare current frame against historical frames for diversity.
+
+**Parameters:**
+- **packet**: Current frame to evaluate
+- **history**: List of recent frames from temporal buffer
+
+**Returns:** `True` if frame is diverse enough (passes), `False` otherwise
+
+**Behavior:**
+1. Gets diversity tags for current frame (explicit or auto-detected)
+2. Validates that specified tags are present in frame
+3. Computes minimum distance to all history frames using appropriate strategies
+4. Applies threshold to determine pass/fail
+
+#### Examples
+
+**Basic usage with auto-detection:**
+
+```python
+from decimatr.taggers.hash import HashTagger
+from decimatr.filters.diversity import DiversityFilter
+
+pipeline = [
+    HashTagger(hash_type='dhash'),
+    DiversityFilter(
+        buffer_size=100,
+        min_distance=0.1
+    )
+]
+# Automatically detects and uses 'dhash' tag
+```
+
+**Explicit tag specification:**
+
+```python
+filter = DiversityFilter(
+    buffer_size=100,
+    diversity_tags=['dhash', 'clip_embedding'],
+    min_distance=0.1
+)
+```
+
+**Custom comparison strategies:**
+
+```python
+from decimatr.filters.comparison_strategies import (
+    HammingDistanceStrategy,
+    EmbeddingDistanceStrategy
+)
+
+filter = DiversityFilter(
+    buffer_size=100,
+    diversity_tags=['dhash', 'clip_embedding'],
+    min_distance=0.1,
+    comparison_strategies={
+        'dhash': HammingDistanceStrategy(),
+        'clip_embedding': EmbeddingDistanceStrategy(metric='cosine')
+    }
+)
+```
+
+**Weighted combination mode:**
+
+```python
+filter = DiversityFilter(
+    buffer_size=100,
+    diversity_tags=['dhash', 'clip_embedding'],
+    min_distance=0.1,
+    enable_weighted_combination=True,
+    tag_weights={
+        'dhash': 0.3,           # 30% weight on visual hash
+        'clip_embedding': 0.7   # 70% weight on semantic similarity
+    }
+)
+```
+
+**Complete pipeline with CLIP:**
+
+```python
+from decimatr.taggers.clip import CLIPTagger
+from decimatr.filters.diversity import DiversityFilter
+from decimatr.filters.comparison_strategies import EmbeddingDistanceStrategy
+
+pipeline = [
+    CLIPTagger(device='cuda', batch_size=32),
+    DiversityFilter(
+        buffer_size=100,
+        diversity_tags=['clip_embedding'],
+        min_distance=0.2,
+        comparison_strategies={
+            'clip_embedding': EmbeddingDistanceStrategy(metric='cosine')
+        }
+    )
+]
+```
+
+**See Also:**
+- [Diversity Filter Examples](DIVERSITY_FILTER_EXAMPLES.md) - Comprehensive usage examples
+- [Migration Guide](DIVERSITY_FILTER_MIGRATION.md) - Upgrading from old DiversityFilter
+- [Custom Components](CUSTOM_COMPONENTS.md) - Creating custom comparison strategies
+
+---
+
+## Comparison Strategies
+
+Comparison strategies define how distances are computed between tag values for diversity filtering.
+
+### ComparisonStrategy (Base Class)
+
+Abstract base class for tag comparison strategies.
+
+```python
+from decimatr.filters.comparison_strategies import ComparisonStrategy
+```
+
+#### Abstract Methods
+
+##### compute_distance()
+
+```python
+@abstractmethod
+def compute_distance(self, value1: Any, value2: Any) -> float
+```
+
+Compute distance between two tag values.
+
+**Parameters:**
+- **value1**: First tag value
+- **value2**: Second tag value
+
+**Returns:** Distance value (higher = more different)
+
+##### name
+
+```python
+@property
+@abstractmethod
+def name(self) -> str
+```
+
+Return strategy name for logging and debugging.
+
+---
+
+### HammingDistanceStrategy
+
+Compute normalized Hamming distance between perceptual hashes.
+
+```python
+from decimatr.filters.comparison_strategies import HammingDistanceStrategy
+```
+
+#### Constructor
+
+```python
+HammingDistanceStrategy()
+```
+
+No parameters required.
+
+#### Behavior
+
+- Computes Hamming distance (number of differing bits) between hash values
+- Normalizes by hash bit length to produce values in range [0, 1]
+- Supports both string (hex) and ImageHash object formats
+- 0.0 = identical hashes, 1.0 = completely different hashes
+
+#### Supported Tags
+
+- `dhash` (difference hash)
+- `phash` (perceptual hash)
+- `ahash` (average hash)
+
+#### Recommended Thresholds
+
+- 0.05-0.10: Very similar frames only
+- 0.10-0.15: Moderately similar frames (recommended)
+- 0.15-0.25: Quite different frames
 
 #### Example
 
 ```python
+from decimatr.filters.comparison_strategies import HammingDistanceStrategy
+
+strategy = HammingDistanceStrategy()
 filter = DiversityFilter(
-    window_size=200,
-    min_distance=0.15,
-    diversity_metric='cosine'
+    diversity_tags=['dhash'],
+    min_distance=0.1,
+    comparison_strategies={'dhash': strategy}
 )
+```
+
+---
+
+### EmbeddingDistanceStrategy
+
+Compute distance between embedding vectors (CLIP, custom models).
+
+```python
+from decimatr.filters.comparison_strategies import EmbeddingDistanceStrategy
+```
+
+#### Constructor
+
+```python
+EmbeddingDistanceStrategy(metric: str = "cosine")
+```
+
+**Parameters:**
+- **metric** (`str`, default='cosine'): Distance metric. Valid values: `'euclidean'`, `'cosine'`, `'manhattan'`
+
+**Raises:**
+- `ValueError`: If metric is not one of the valid values
+
+#### Behavior
+
+- **Euclidean**: L2 distance, measures absolute distance in embedding space
+- **Cosine**: 1 - cosine similarity, measures angular distance (direction-based)
+- **Manhattan**: L1 distance, sum of absolute differences
+
+- Handles vectors of different lengths by padding with zeros
+- Normalizes vectors before computing cosine distance
+- Handles zero vectors gracefully (returns maximum distance)
+
+#### Supported Tags
+
+- `clip_embedding` (CLIP embeddings)
+- `model_embedding` (custom model embeddings)
+- Any vector-based tag
+
+#### Recommended Thresholds
+
+**Cosine distance** (recommended for semantic similarity):
+- 0.1-0.2: Very similar content
+- 0.2-0.3: Moderately similar content (recommended)
+- 0.3-0.5: Quite different content
+
+**Euclidean distance**:
+- 1.0-2.0: Very similar content
+- 2.0-5.0: Moderately similar content (recommended)
+- 5.0-10.0: Quite different content
+
+**Manhattan distance**:
+- 3.0-5.0: Very similar content
+- 5.0-10.0: Moderately similar content (recommended)
+- 10.0-20.0: Quite different content
+
+#### Examples
+
+**Cosine distance (recommended for CLIP):**
+
+```python
+from decimatr.filters.comparison_strategies import EmbeddingDistanceStrategy
+
+strategy = EmbeddingDistanceStrategy(metric='cosine')
+filter = DiversityFilter(
+    diversity_tags=['clip_embedding'],
+    min_distance=0.2,
+    comparison_strategies={'clip_embedding': strategy}
+)
+```
+
+**Euclidean distance:**
+
+```python
+strategy = EmbeddingDistanceStrategy(metric='euclidean')
+filter = DiversityFilter(
+    diversity_tags=['clip_embedding'],
+    min_distance=2.0,
+    comparison_strategies={'clip_embedding': strategy}
+)
+```
+
+---
+
+### HistogramDistanceStrategy
+
+Compute distance between color histograms.
+
+```python
+from decimatr.filters.comparison_strategies import HistogramDistanceStrategy
+```
+
+#### Constructor
+
+```python
+HistogramDistanceStrategy(metric: str = "intersection")
+```
+
+**Parameters:**
+- **metric** (`str`, default='intersection'): Distance metric. Valid values: `'intersection'`, `'chi_square'`, `'bhattacharyya'`
+
+**Raises:**
+- `ValueError`: If metric is not one of the valid values
+
+#### Behavior
+
+- **Intersection**: 1 - histogram intersection, measures overlap (0 = identical, 1 = no overlap)
+- **Chi-square**: Chi-square distance, statistical measure of difference
+- **Bhattacharyya**: -log(Bhattacharyya coefficient), probabilistic measure
+
+- Normalizes histograms before comparison (sums to 1.0)
+- Handles histograms of different lengths by padding with zeros
+- Adds small epsilon (1e-10) to avoid division by zero
+
+#### Supported Tags
+
+- `color_hist` (color histogram)
+- `color_histogram` (alternative name)
+- Any histogram-based tag
+
+#### Recommended Thresholds
+
+**Intersection** (recommended):
+- 0.2-0.3: Similar color distributions
+- 0.3-0.4: Moderately different colors (recommended)
+- 0.4-0.6: Quite different colors
+
+**Chi-square**:
+- 0.3-0.5: Similar distributions
+- 0.5-1.0: Moderately different (recommended)
+- 1.0-2.0: Quite different
+
+**Bhattacharyya**:
+- 0.3-0.5: Similar distributions
+- 0.5-1.0: Moderately different (recommended)
+- 1.0-2.0: Quite different
+
+#### Examples
+
+**Histogram intersection (recommended):**
+
+```python
+from decimatr.filters.comparison_strategies import HistogramDistanceStrategy
+
+strategy = HistogramDistanceStrategy(metric='intersection')
+filter = DiversityFilter(
+    diversity_tags=['color_hist'],
+    min_distance=0.3,
+    comparison_strategies={'color_hist': strategy}
+)
+```
+
+**Chi-square distance:**
+
+```python
+strategy = HistogramDistanceStrategy(metric='chi_square')
+filter = DiversityFilter(
+    diversity_tags=['color_hist'],
+    min_distance=0.5,
+    comparison_strategies={'color_hist': strategy}
+)
+```
+
+---
+
+## Tag Classification
+
+The tag classification system distinguishes between diversity-suitable and metric-only tags.
+
+### TagClassificationRegistry
+
+Registry for classifying tags as diversity-suitable or metric-only.
+
+```python
+from decimatr.filters.tag_classification import TagClassificationRegistry
+```
+
+#### Class Attributes
+
+##### DIVERSITY_SUITABLE_TAGS
+
+```python
+DIVERSITY_SUITABLE_TAGS: Set[str] = {
+    "dhash", "phash", "ahash",  # Perceptual hashes
+    "clip_embedding", "model_embedding",  # Embeddings
+    "color_hist", "color_histogram"  # Color histograms
+}
+```
+
+Tags suitable for diversity analysis.
+
+##### METRIC_ONLY_TAGS
+
+```python
+METRIC_ONLY_TAGS: Set[str] = {
+    "blur_score", "entropy", "edge_density"
+}
+```
+
+Tags representing quality metrics, not suitable for diversity.
+
+#### Class Methods
+
+##### is_diversity_suitable()
+
+```python
+@classmethod
+def is_diversity_suitable(cls, tag_key: str) -> bool
+```
+
+Check if a tag is suitable for diversity analysis.
+
+**Parameters:**
+- **tag_key** (`str`): Tag key to check
+
+**Returns:** `True` if tag is diversity-suitable, `False` otherwise
+
+**Note:** Unknown tags default to diversity-suitable.
+
+##### is_metric_only()
+
+```python
+@classmethod
+def is_metric_only(cls, tag_key: str) -> bool
+```
+
+Check if a tag is metric-only (not suitable for diversity).
+
+**Parameters:**
+- **tag_key** (`str`): Tag key to check
+
+**Returns:** `True` if tag is metric-only, `False` otherwise
+
+##### get_category()
+
+```python
+@classmethod
+def get_category(cls, tag_key: str) -> TagCategory
+```
+
+Get the category of a tag.
+
+**Parameters:**
+- **tag_key** (`str`): Tag key to classify
+
+**Returns:** `TagCategory.DIVERSITY_SUITABLE` or `TagCategory.METRIC_ONLY`
+
+**Note:** Unknown tags default to `TagCategory.DIVERSITY_SUITABLE`.
+
+#### Example
+
+```python
+from decimatr.filters.tag_classification import TagClassificationRegistry
+
+# Check if tags are diversity-suitable
+is_suitable = TagClassificationRegistry.is_diversity_suitable('dhash')  # True
+is_suitable = TagClassificationRegistry.is_diversity_suitable('blur_score')  # False
+
+# Check if tags are metric-only
+is_metric = TagClassificationRegistry.is_metric_only('blur_score')  # True
+is_metric = TagClassificationRegistry.is_metric_only('dhash')  # False
+
+# Get category
+from decimatr.filters.tag_classification import TagCategory
+category = TagClassificationRegistry.get_category('clip_embedding')
+# Returns TagCategory.DIVERSITY_SUITABLE
 ```
 
 ---
