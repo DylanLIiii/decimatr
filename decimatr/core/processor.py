@@ -8,9 +8,12 @@ and predefined strategies for common use cases.
 
 import asyncio
 import logging
+import threading
 import time
+from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
 import numpy as np
@@ -22,6 +25,21 @@ from decimatr.strategies.base import FilterStrategy
 from decimatr.taggers.base import Tagger
 
 logger = logging.getLogger(__name__)
+
+
+class OverflowStrategy(Enum):
+    """
+    Strategy for handling buffer overflow in StreamProcessor.
+
+    Attributes:
+        DROP_OLDEST: Remove oldest frame when buffer is full (FIFO)
+        DROP_NEWEST: Reject new frame when buffer is full
+        REJECT: Reject new frame and return False from add()
+    """
+
+    DROP_OLDEST = "drop_oldest"
+    DROP_NEWEST = "drop_newest"
+    REJECT = "reject"
 
 
 @dataclass
@@ -1393,3 +1411,552 @@ class FrameProcessor:
 
         # Frame passed all filters
         return packet
+
+
+class StreamProcessor:
+    """
+    Stream-based frame processor with bounded buffer.
+
+    StreamProcessor provides a streaming API for continuous frame processing
+    with a bounded buffer. Frames are processed through the pipeline as they
+    are added, and only frames that pass all filters are retained in the buffer.
+
+    The buffer has a configurable maximum size and supports different overflow
+    strategies for handling new frames when the buffer is full.
+
+    Attributes:
+        pipeline: Ordered list of taggers and filters to apply
+        max_buffer_size: Maximum number of frames to retain in buffer
+        overflow_strategy: Strategy for handling buffer overflow
+        lazy_evaluation: Whether to use lazy tag computation
+        release_memory: Whether to release frame data from filtered frames
+
+    Example:
+        >>> # Create stream processor with blur removal
+        >>> stream = StreamProcessor(
+        ...     pipeline=[BlurTagger(), BlurFilter(threshold=100.0)],
+        ...     max_buffer_size=100
+        ... )
+        >>>
+        >>> # Add frames continuously
+        >>> for frame in video_frames:
+        ...     if stream.add(frame):
+        ...         print(f"Frame {frame.frame_number} accepted")
+        ...     else:
+        ...         print(f"Frame {frame.frame_number} rejected")
+        >>>
+        >>> # Get accumulated frames
+        >>> selected_frames = stream.get_frames()
+        >>> print(f"Buffer contains {len(selected_frames)} frames")
+        >>>
+        >>> # Check buffer status
+        >>> status = stream.get_status()
+        >>> print(f"Buffer: {status['buffer_size']}/{status['max_buffer_size']}")
+
+    Thread Safety:
+        All public methods are thread-safe and can be called from multiple threads.
+    """
+
+    def __init__(
+        self,
+        pipeline: list[Tagger | Filter] | None = None,
+        strategy: FilterStrategy | None = None,
+        max_buffer_size: int = 100,
+        overflow_strategy: OverflowStrategy | str = OverflowStrategy.DROP_OLDEST,
+        lazy_evaluation: bool = True,
+        release_memory: bool = True,
+    ):
+        """
+        Initialize stream processor with pipeline and buffer configuration.
+
+        Args:
+            pipeline: Custom pipeline of taggers and filters. If None and no
+                     strategy provided, uses pass-through (no filtering).
+            strategy: Predefined FilterStrategy. If provided, overrides pipeline.
+            max_buffer_size: Maximum number of frames to retain in buffer.
+                           Must be at least 1. Default is 100.
+            overflow_strategy: Strategy for handling buffer overflow. Can be:
+                             - OverflowStrategy.DROP_OLDEST: Remove oldest frame (FIFO)
+                             - OverflowStrategy.DROP_NEWEST: Drop new frame silently
+                             - OverflowStrategy.REJECT: Reject new frame (add returns False)
+                             Default is DROP_OLDEST.
+            lazy_evaluation: Enable lazy tag computation (compute only when required
+                           by filters). Default is True for better performance.
+            release_memory: Release frame_data from memory after filtering out frames.
+                          Default is True to reduce memory usage.
+
+        Raises:
+            ConfigurationError: If pipeline configuration is invalid
+            ValueError: If max_buffer_size is invalid
+
+        Example:
+            >>> # With custom pipeline
+            >>> stream = StreamProcessor(
+            ...     pipeline=[BlurTagger(), BlurFilter(threshold=100.0)],
+            ...     max_buffer_size=50,
+            ...     overflow_strategy=OverflowStrategy.REJECT
+            ... )
+            >>>
+            >>> # With predefined strategy
+            >>> from decimatr.strategies.blur_removal import BlurRemovalStrategy
+            >>> stream = StreamProcessor(
+            ...     strategy=BlurRemovalStrategy(threshold=100.0),
+            ...     max_buffer_size=100
+            ... )
+        """
+        # Validate parameters
+        if max_buffer_size < 1:
+            raise ValueError(f"max_buffer_size must be at least 1, got {max_buffer_size}")
+
+        # Convert string overflow strategy to enum
+        if isinstance(overflow_strategy, str):
+            try:
+                overflow_strategy = OverflowStrategy(overflow_strategy)
+            except ValueError:
+                valid_strategies = [s.value for s in OverflowStrategy]
+                raise ValueError(
+                    f"Invalid overflow_strategy: {overflow_strategy}. "
+                    f"Must be one of: {valid_strategies}"
+                )
+
+        # Store configuration
+        self.max_buffer_size = max_buffer_size
+        self.overflow_strategy = overflow_strategy
+        self.lazy_evaluation = lazy_evaluation
+        self.release_memory = release_memory
+
+        # Build pipeline from strategy or use provided pipeline
+        if strategy is not None:
+            self.pipeline = strategy.build_pipeline()
+            logger.info(f"StreamProcessor: Built pipeline from strategy: {strategy}")
+        elif pipeline is not None:
+            self.pipeline = pipeline
+            logger.info(f"StreamProcessor: Using custom pipeline with {len(pipeline)} components")
+        else:
+            # Default: pass-through (no filtering)
+            self.pipeline = []
+            logger.info("StreamProcessor: Using pass-through pipeline (no filtering)")
+
+        # Create internal FrameProcessor for pipeline execution
+        self._processor = FrameProcessor(
+            pipeline=self.pipeline,
+            n_workers=1,  # Stream processing is always single-threaded
+            lazy_evaluation=lazy_evaluation,
+            release_memory=release_memory,
+        )
+
+        # Initialize buffer and metrics
+        self._buffer: deque[VideoFramePacket] = deque(maxlen=max_buffer_size)
+        self._lock = threading.RLock()  # Reentrant lock for thread safety
+
+        # Metrics tracking
+        self._metrics = {
+            "total_added": 0,
+            "total_accepted": 0,
+            "total_rejected": 0,
+            "total_filtered": 0,
+            "total_dropped": 0,  # Dropped due to overflow
+            "errors": [],
+        }
+
+        logger.info(
+            f"StreamProcessor initialized: max_buffer_size={max_buffer_size}, "
+            f"overflow_strategy={overflow_strategy.value}, "
+            f"lazy_evaluation={lazy_evaluation}, "
+            f"release_memory={release_memory}"
+        )
+
+    def add(self, frame: VideoFramePacket) -> bool:
+        """
+        Add a frame to the stream processor.
+
+        The frame is immediately processed through the pipeline. If it passes
+        all filters, it is added to the buffer. If the buffer is full, the
+        overflow strategy determines what happens.
+
+        Args:
+            frame: VideoFramePacket to process and potentially add to buffer
+
+        Returns:
+            True if frame was accepted (passed filters and added to buffer),
+            False if frame was rejected (filtered out or buffer overflow with
+            REJECT strategy)
+
+        Example:
+            >>> stream = StreamProcessor(
+            ...     pipeline=[BlurTagger(), BlurFilter(threshold=100.0)],
+            ...     max_buffer_size=10
+            ... )
+            >>>
+            >>> # Add frames
+            >>> for frame in video_frames:
+            ...     if stream.add(frame):
+            ...         print(f"Frame {frame.frame_number} accepted")
+            ...     else:
+            ...         print(f"Frame {frame.frame_number} rejected")
+
+        Thread Safety:
+            This method is thread-safe and can be called from multiple threads.
+        """
+        with self._lock:
+            self._metrics["total_added"] += 1
+
+            try:
+                # Process frame through pipeline
+                result = self._processor._process_frame(frame)
+
+                if result is None:
+                    # Frame was filtered out
+                    self._metrics["total_filtered"] += 1
+                    logger.debug(f"Frame {frame.frame_number}: filtered out by pipeline")
+                    return False
+
+                # Frame passed all filters, try to add to buffer
+                return self._add_to_buffer(result)
+
+            except Exception as e:
+                error_msg = f"Frame {frame.frame_number}: Error during processing: {e}"
+                logger.error(error_msg)
+                self._metrics["errors"].append(error_msg)
+                self._metrics["total_rejected"] += 1
+                return False
+
+    def _add_to_buffer(self, frame: VideoFramePacket) -> bool:
+        """
+        Add frame to buffer, handling overflow according to strategy.
+
+        Args:
+            frame: VideoFramePacket that passed all filters
+
+        Returns:
+            True if frame was added, False if rejected due to overflow
+
+        Note:
+            This method assumes the lock is already held by the caller.
+        """
+        # Check if buffer is full
+        if len(self._buffer) >= self.max_buffer_size:
+            if self.overflow_strategy == OverflowStrategy.REJECT:
+                # Reject new frame
+                self._metrics["total_rejected"] += 1
+                logger.debug(f"Frame {frame.frame_number}: rejected (buffer full, strategy=REJECT)")
+                return False
+
+            elif self.overflow_strategy == OverflowStrategy.DROP_NEWEST:
+                # Drop new frame silently
+                self._metrics["total_dropped"] += 1
+                logger.debug(
+                    f"Frame {frame.frame_number}: dropped (buffer full, strategy=DROP_NEWEST)"
+                )
+                return False
+
+            elif self.overflow_strategy == OverflowStrategy.DROP_OLDEST:
+                # Drop oldest frame (deque handles this automatically with maxlen)
+                self._metrics["total_dropped"] += 1
+                logger.debug(
+                    f"Frame {frame.frame_number}: accepted, oldest frame dropped "
+                    f"(buffer full, strategy=DROP_OLDEST)"
+                )
+
+        # Add frame to buffer
+        self._buffer.append(frame)
+        self._metrics["total_accepted"] += 1
+        logger.debug(
+            f"Frame {frame.frame_number}: accepted "
+            f"(buffer size: {len(self._buffer)}/{self.max_buffer_size})"
+        )
+        return True
+
+    def get_frames(self, copy: bool = False) -> list[VideoFramePacket]:
+        """
+        Get all frames currently in the buffer.
+
+        Args:
+            copy: If True, returns a copy of the buffer. If False (default),
+                 returns a list view of the buffer. The buffer itself is not
+                 modified in either case.
+
+        Returns:
+            List of VideoFramePacket objects in the buffer, ordered from
+            oldest to newest
+
+        Example:
+            >>> stream = StreamProcessor(pipeline=[...])
+            >>> # Add some frames
+            >>> for frame in video_frames[:10]:
+            ...     stream.add(frame)
+            >>>
+            >>> # Get accumulated frames
+            >>> frames = stream.get_frames()
+            >>> print(f"Buffer contains {len(frames)} frames")
+
+        Thread Safety:
+            This method is thread-safe and can be called from multiple threads.
+        """
+        with self._lock:
+            if copy:
+                return list(self._buffer)
+            else:
+                return list(self._buffer)
+
+    def clear(self) -> int:
+        """
+        Clear all frames from the buffer.
+
+        Returns:
+            Number of frames that were in the buffer before clearing
+
+        Example:
+            >>> stream = StreamProcessor(pipeline=[...])
+            >>> # Add some frames
+            >>> for frame in video_frames:
+            ...     stream.add(frame)
+            >>>
+            >>> # Clear buffer
+            >>> cleared_count = stream.clear()
+            >>> print(f"Cleared {cleared_count} frames")
+
+        Thread Safety:
+            This method is thread-safe and can be called from multiple threads.
+        """
+        with self._lock:
+            count = len(self._buffer)
+            self._buffer.clear()
+            logger.info(f"StreamProcessor: Cleared {count} frames from buffer")
+            return count
+
+    def get_status(self) -> dict[str, Any]:
+        """
+        Get current buffer status and metrics.
+
+        Returns:
+            Dictionary containing:
+            - buffer_size: Current number of frames in buffer
+            - max_buffer_size: Maximum buffer capacity
+            - buffer_utilization: Percentage of buffer used (0.0-100.0)
+            - total_added: Total frames added (attempted)
+            - total_accepted: Total frames accepted into buffer
+            - total_rejected: Total frames rejected (overflow with REJECT strategy)
+            - total_filtered: Total frames filtered out by pipeline
+            - total_dropped: Total frames dropped due to overflow
+            - error_count: Number of errors encountered
+            - overflow_strategy: Current overflow strategy
+            - acceptance_rate: Percentage of added frames that were accepted
+
+        Example:
+            >>> stream = StreamProcessor(pipeline=[...])
+            >>> # Add some frames
+            >>> for frame in video_frames:
+            ...     stream.add(frame)
+            >>>
+            >>> # Check status
+            >>> status = stream.get_status()
+            >>> print(f"Buffer: {status['buffer_size']}/{status['max_buffer_size']}")
+            >>> print(f"Acceptance rate: {status['acceptance_rate']:.1f}%")
+
+        Thread Safety:
+            This method is thread-safe and can be called from multiple threads.
+        """
+        with self._lock:
+            buffer_size = len(self._buffer)
+            total_added = self._metrics["total_added"]
+
+            return {
+                "buffer_size": buffer_size,
+                "max_buffer_size": self.max_buffer_size,
+                "buffer_utilization": (buffer_size / self.max_buffer_size * 100.0)
+                if self.max_buffer_size > 0
+                else 0.0,
+                "total_added": total_added,
+                "total_accepted": self._metrics["total_accepted"],
+                "total_rejected": self._metrics["total_rejected"],
+                "total_filtered": self._metrics["total_filtered"],
+                "total_dropped": self._metrics["total_dropped"],
+                "error_count": len(self._metrics["errors"]),
+                "overflow_strategy": self.overflow_strategy.value,
+                "acceptance_rate": (self._metrics["total_accepted"] / total_added * 100.0)
+                if total_added > 0
+                else 0.0,
+            }
+
+    def print_status(self) -> None:
+        """
+        Print a human-readable summary of buffer status and metrics.
+
+        Example:
+            >>> stream = StreamProcessor(pipeline=[...])
+            >>> # Add some frames
+            >>> for frame in video_frames:
+            ...     stream.add(frame)
+            >>>
+            >>> # Print status
+            >>> stream.print_status()
+            StreamProcessor Status
+            =====================
+            Buffer: 45/100 (45.0% full)
+            Total Added: 1000
+            Accepted: 45 (4.5%)
+            Filtered: 950 (95.0%)
+            Rejected: 0 (0.0%)
+            Dropped: 5 (0.5%)
+            Errors: 0
+
+        Thread Safety:
+            This method is thread-safe and can be called from multiple threads.
+        """
+        status = self.get_status()
+
+        print("\nStreamProcessor Status")
+        print("=" * 60)
+        print(
+            f"Buffer: {status['buffer_size']}/{status['max_buffer_size']} "
+            f"({status['buffer_utilization']:.1f}% full)"
+        )
+        print(f"Overflow Strategy: {status['overflow_strategy']}")
+        print(f"\nTotal Added: {status['total_added']}")
+        print(f"Accepted: {status['total_accepted']} ({status['acceptance_rate']:.1f}%)")
+
+        if status["total_added"] > 0:
+            filtered_pct = status["total_filtered"] / status["total_added"] * 100.0
+            rejected_pct = status["total_rejected"] / status["total_added"] * 100.0
+            dropped_pct = status["total_dropped"] / status["total_added"] * 100.0
+
+            print(f"Filtered: {status['total_filtered']} ({filtered_pct:.1f}%)")
+            print(f"Rejected: {status['total_rejected']} ({rejected_pct:.1f}%)")
+            print(f"Dropped: {status['total_dropped']} ({dropped_pct:.1f}%)")
+
+        print(f"Errors: {status['error_count']}")
+        print("=" * 60 + "\n")
+
+    def __len__(self) -> int:
+        """
+        Get current number of frames in buffer.
+
+        Returns:
+            Number of frames currently in buffer
+
+        Example:
+            >>> stream = StreamProcessor(pipeline=[...])
+            >>> stream.add(frame1)
+            >>> stream.add(frame2)
+            >>> print(len(stream))  # Output: 2
+        """
+        with self._lock:
+            return len(self._buffer)
+
+    def __bool__(self) -> bool:
+        """
+        Check if buffer contains any frames.
+
+        Returns:
+            True if buffer is not empty, False otherwise
+
+        Example:
+            >>> stream = StreamProcessor(pipeline=[...])
+            >>> if stream:
+            ...     print("Buffer has frames")
+            ... else:
+            ...     print("Buffer is empty")
+        """
+        with self._lock:
+            return len(self._buffer) > 0
+
+    @classmethod
+    def with_blur_removal(
+        cls, threshold: float = 100.0, max_buffer_size: int = 100, **kwargs
+    ) -> "StreamProcessor":
+        """
+        Create stream processor with blur removal strategy.
+
+        Args:
+            threshold: Minimum blur score for frames to pass
+            max_buffer_size: Maximum buffer capacity
+            **kwargs: Additional arguments passed to StreamProcessor constructor
+
+        Returns:
+            StreamProcessor configured with BlurRemovalStrategy
+
+        Example:
+            >>> stream = StreamProcessor.with_blur_removal(
+            ...     threshold=150.0,
+            ...     max_buffer_size=50
+            ... )
+        """
+        from decimatr.strategies.blur_removal import BlurRemovalStrategy
+
+        strategy = BlurRemovalStrategy(threshold=threshold)
+        return cls(strategy=strategy, max_buffer_size=max_buffer_size, **kwargs)
+
+    @classmethod
+    def with_duplicate_detection(
+        cls,
+        threshold: float = 0.05,
+        window_size: int = 50,
+        max_buffer_size: int = 100,
+        **kwargs,
+    ) -> "StreamProcessor":
+        """
+        Create stream processor with duplicate detection strategy.
+
+        Args:
+            threshold: Hash similarity threshold (0.0-1.0)
+            window_size: Number of recent frames to compare against
+            max_buffer_size: Maximum buffer capacity
+            **kwargs: Additional arguments passed to StreamProcessor constructor
+
+        Returns:
+            StreamProcessor configured with DuplicateDetectionStrategy
+
+        Example:
+            >>> stream = StreamProcessor.with_duplicate_detection(
+            ...     threshold=0.02,
+            ...     window_size=100,
+            ...     max_buffer_size=50
+            ... )
+        """
+        from decimatr.strategies.duplicate_detection import DuplicateDetectionStrategy
+
+        strategy = DuplicateDetectionStrategy(threshold=threshold, window_size=window_size)
+        return cls(strategy=strategy, max_buffer_size=max_buffer_size, **kwargs)
+
+    @classmethod
+    def with_smart_sampling(cls, max_buffer_size: int = 100, **kwargs) -> "StreamProcessor":
+        """
+        Create stream processor with smart sampling strategy.
+
+        Args:
+            max_buffer_size: Maximum buffer capacity
+            **kwargs: Additional arguments passed to StreamProcessor constructor
+                     or SmartSamplingStrategy
+
+        Returns:
+            StreamProcessor configured with SmartSamplingStrategy
+
+        Example:
+            >>> stream = StreamProcessor.with_smart_sampling(
+            ...     max_buffer_size=50,
+            ...     blur_threshold=150.0
+            ... )
+        """
+        from decimatr.strategies.smart_sampling import SmartSamplingStrategy
+
+        # Separate strategy kwargs from processor kwargs
+        strategy_kwargs = {}
+        processor_kwargs = {}
+
+        strategy_params = {
+            "blur_threshold",
+            "duplicate_threshold",
+            "duplicate_window",
+            "diversity_window",
+            "diversity_min_distance",
+        }
+
+        for key, value in kwargs.items():
+            if key in strategy_params:
+                strategy_kwargs[key] = value
+            else:
+                processor_kwargs[key] = value
+
+        strategy = SmartSamplingStrategy(**strategy_kwargs)
+        return cls(strategy=strategy, max_buffer_size=max_buffer_size, **processor_kwargs)
